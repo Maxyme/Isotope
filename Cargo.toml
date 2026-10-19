@@ -1,0 +1,35 @@
+[package]
+name = "wine-fex-builder"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "cargo"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+sha2 = "0.10"
+walkdir = "2.5"
+semver = "1.0"
+shlex = "2.0"
+tempfile = "3.10"
+tar = "0.4"
+flate2 = "1.0"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zstd = "0.13"
+lzma-rs = "0.3"
+object = "0.36"
+rustix = { version = "1", features = ["fs", "process"] }
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+ctrlc = { version = "3.4", features = ["termination"] }
+env_logger = "0.11"
+log = "0.4"
+ureq = { version = "2.10", default-features = false, features = ["tls"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+[lints.clippy]
+all = { level = "warn", priority = -1 }
