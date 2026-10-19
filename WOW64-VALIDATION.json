@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "date": "2026-10-19",
+  "recorded_at_utc": "2026-10-19T13:43:34.906204+00:00",
+  "wine_revision": "ddf094e49915edf19d414d20bccd8404bcdb99f8",
+  "root_cause": {
+    "file": "dlls/wow64/process.c",
+    "function": "ps_attributes_32to64",
+    "attribute": "PS_ATTRIBUTE_IMAGE_NAME",
+    "fault": "A guest image-name address was zero-extended instead of widened through Tolkara's relocated WoW64 window",
+    "observed_native_read_fault": "0x16fb60",
+    "relocated_window": "0x7000000000"
+  },
+  "patch": {
+    "file": "assets/patches/wine-tolkara-wow64-process-image-pointer.patch",
+    "sha256": "d295f52cc473939c492a01839f2a71ffeac486194a2d4f01d86a7d858a051eb3",
+    "recipe": "assets/wine/recipes/arm64-fex.toml"
+  },
+  "controlled_comparison": {
+    "control": "FAILED_CreateProcessW_998",
+    "fixed_module": "PASSED",
+    "same_other_runtime_files": true,
+    "memory_threads_exceptions_retained": true,
+    "child_expected_exit_code": 37,
+    "launch_forms": [
+      "explicit application name",
+      "NULL application name with parsed command line"
+    ],
+    "spaces_and_unicode_in_executable_path": "PASSED",
+    "control_log": "target/wow64-investigation/control-path-x86.log",
+    "fixed_log": "target/wow64-investigation/fixed-path-x86.log",
+    "control_wow64_sha256": "9bffa2cdd29c1cf523fb62e3a06ba7cee98866b712ff3764bf236c503a544c58",
+    "fixed_wow64_sha256": "73a7ef70c57350b97f09018333d8956dc726c18d0d7a34ee1e45e4d8e0cd47b5"
+  },
+  "rebuild": {
+    "command": "wine-fex-builder fex build-wine --work target/wow64-fixed-workspace --jobs 6",
+    "status": "PASSED",
+    "wine_source_copy": "PRIVATE_CLONE",
+    "cached_compiler_and_fex_reused": true,
+    "incremental": true,
+    "recipe_patch_recorded_in_build_receipt": true
+  },
+  "strict_publisher_validation": {
+    "command": "wine-fex-builder --nucleon ../Nucleon/target/debug/nucleon release validate --version 0.1.0-rc.1 --work target/wow64-fixed-workspace --output target/wow64-strict-validation --require-x86",
+    "report": "target/wow64-strict-validation/validation.json",
+    "result": {
+      "gameplay": "NOT_RUN",
+      "guest_smoke": {
+        "x64": {
+          "status": "PASSED"
+        },
+        "x86": {
+          "status": "PASSED"
+        }
+      },
+      "integrity_and_native_dependencies": "PASSED",
+      "managed_archive_import": "PASSED",
+      "prefix_cleanup": "PASSED",
+      "schema": 2,
+      "status": "PASSED",
+      "steam": "NOT_RUN",
+      "x86_required": true
+    },
+    "archive": "target/wow64-strict-validation/diagnostic-runtime.tar.gz",
+    "both_child_launch_forms_passed_for_both_guests": true
+  },
+  "portable": {
+    "builder_tests_passed": 18,
+    "builder_tests_ignored": 1,
+    "strict_clippy": "PASSED",
+    "format": "PASSED",
+    "x86_and_x64_probe_compile_Wall_Wextra_Werror": "PASSED"
+  },
+  "policy": "The existing optional x86 preview policy is unchanged; the native run above explicitly required x86 success.",
+  "limits": [
+    "No clean full upstream/FEX rebuild",
+    "No remote CI execution or release publication",
+    "No GPU/Steam/gameplay qualification"
+  ],
+  "committed": false,
+  "nucleon_checkout_changed": false
+}
