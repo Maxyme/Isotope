@@ -1,4 +1,6 @@
-# Wine/FEX runtime builder
+# Isotope
+
+Native ARM64 Wine/FEX runtimes for macOS.
 
 Standalone Rust tooling for the pinned Tolkara ARM64 Wine/FEX implementation on
 Apple Silicon macOS. This repository owns compilation, patches, experimental
@@ -17,10 +19,10 @@ cargo build --release --locked
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 
-target/release/wine-fex-builder fex fetch
-target/release/wine-fex-builder fex doctor
-target/release/wine-fex-builder fex build-fex
-target/release/wine-fex-builder fex build-wine
+target/release/isotope fex fetch
+target/release/isotope fex doctor
+target/release/isotope fex build-fex
+target/release/isotope fex build-wine
 ```
 
 `--work` defaults to `target/arm64-fex`. Existing local workspaces can be supplied
@@ -33,14 +35,14 @@ The Steam-route probe and game launch wrappers remain in Nucleon's devtools.
 
 Package validation uses a separately built Nucleon executable through its public
 CLI, not duplicated installer/ABI code. Supply `--nucleon /path/to/nucleon` or
-`WINE_FEX_NUCLEON`; otherwise `nucleon` is resolved from PATH. It must support
+`ISOTOPE_NUCLEON`; otherwise `nucleon` is resolved from PATH. It must support
 `wine install` and schema-1 `wine inspect --json`. Build and fetch commands do
 not need Nucleon. Assembly invokes its descriptor validator. Release validation
 installs into private support storage, verifies the installed files and native
 dependencies, then runs CPU probes from that relocated installation.
 
 ```sh
-target/release/wine-fex-builder --nucleon ../Nucleon/target/debug/nucleon \
+target/release/isotope --nucleon ../Nucleon/target/debug/nucleon \
   release build --version 0.1.0-rc.1 --output target/release-assets
 ```
 
@@ -55,8 +57,12 @@ has no corresponding-sources bundle and is not a distribution release.
 **Both x64 and x86 tests always run.** x64, archive import/integrity/native closure,
 and server cleanup must pass. A failed x86 test is temporarily non-blocking,
 recorded as `FAILED_OPTIONAL` with its error and log; overall validation becomes
-`PASSED_WITH_OPTIONAL_FAILURE`. The current observed defect is `CreateProcessW`
-error 998. Passing CPU tests does not qualify Steam or gameplay.
+`PASSED_WITH_OPTIONAL_FAILURE`.
+
+The original `CreateProcessW` error 998 was traced to a missing image-name pointer
+conversion in Wine and is corrected by the downstream patch described in
+[WOW64-FIX.md](WOW64-FIX.md). The preview policy remains optional until deliberately
+changed; `--require-x86` still forces the check. CPU tests do not qualify gameplay.
 
 Pass `--require-x86` to any `release` action to restore mandatory 32-bit validation.
 Interruption still aborts publication. This temporary policy is visible in
@@ -70,19 +76,19 @@ loaders/drivers, Steam libraries, Apple GPTK and Microsoft game DLLs.
 
 Each release includes:
 
-- `wine-fex-<version>-macos-arm64.tar.gz`, with `nucleon-runtime.toml` schema 1.
+- `isotope-<version>-macos-arm64.tar.gz`, with `nucleon-runtime.toml` schema 1.
 - Matching patched Wine/FEX/helper and builder sources, initialized pinned
   submodules, per-file source manifest, build scripts and notices.
 - `runtime-release.json` schema 2, `SHA256SUMS.txt`, release notes and validation logs.
 
 Nucleon's named source resolves GitHub release tag `v<version>` in
-`Maxyme/wine-fex`; it checks the exact version, asset filename and SHA256 before
+`Maxyme/isotope`; it checks the exact version, asset filename and SHA256 before
 using its normal immutable-generation importer. No automatic latest update.
 
 ```sh
-nucleon wine install wine-fex --version 0.1.0-rc.1 --register
-nucleon wine install ./wine-fex-0.1.0-rc.1-macos-arm64.tar.gz --register
-nucleon wine install https://github.com/Maxyme/wine-fex/releases/download/v0.1.0-rc.1/wine-fex-0.1.0-rc.1-macos-arm64.tar.gz --register
+nucleon wine install isotope --version 0.1.0-rc.1 --register
+nucleon wine install ./isotope-0.1.0-rc.1-macos-arm64.tar.gz --register
+nucleon wine install https://github.com/Maxyme/isotope/releases/download/v0.1.0-rc.1/isotope-0.1.0-rc.1-macos-arm64.tar.gz --register
 ```
 
 A local directory is also accepted. URLs use adjacent `runtime-release.json`
@@ -114,3 +120,7 @@ passed. x86 reproduced error 998 and was recorded as optional; validation exited
 zero. Direct archive installation/registration, checksum rejection and Intel
 selection preservation passed in an isolated home. No Steam/game launch, fresh
 full source build or remote release run was performed. See VALIDATION.json.
+
+The split verification above predates the 32-bit process fix. The current
+[WoW64 fix](WOW64-FIX.md) and [verification record](WOW64-VALIDATION.json) show both
+guests passing a strict local `--require-x86` validation run.

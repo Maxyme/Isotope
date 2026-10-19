@@ -1,4 +1,4 @@
-name: Wine/FEX runtime prerelease
+name: Isotope runtime prerelease
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
         run: |
           x86_args=()
           if test "$REQUIRE_X86" = true; then x86_args+=(--require-x86); fi
-          target/release/wine-fex-builder --nucleon "$PWD/_consumer/target/release/nucleon" release build \
+          target/release/isotope --nucleon "$PWD/_consumer/target/release/nucleon" release build \
             --version "${REQUESTED_VERSION#v}" \
             --work target/runtime-release \
             --output target/runtime-release-assets \
@@ -114,7 +114,7 @@ jobs:
           sha256sum --check SHA256SUMS.txt
           gh release create "$RELEASE_TAG" --repo "$GH_REPO" --verify-tag \
             --draft --prerelease --latest=false \
-            --title "ARM64 Wine/FEX core ${RELEASE_TAG#v} (experimental)" \
+            --title "Isotope ${RELEASE_TAG#v} (experimental ARM64 Wine/FEX)" \
             --notes-file RELEASE-NOTES.md \
             ./*.tar.gz SHA256SUMS.txt runtime-release.json RELEASE-NOTES.md
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --prerelease --latest=false

@@ -18,7 +18,7 @@ use std::{num::NonZeroUsize, path::PathBuf, sync::atomic::Ordering};
 
 #[derive(Parser)]
 #[command(
-    about = "Developer builds, probes and source-inclusive Wine/FEX packaging",
+    about = "Isotope: native ARM64 Wine/FEX builds, probes and source-inclusive packaging",
     version
 )]
 struct Cli {
@@ -161,6 +161,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let _ = NUCLEON.set(
         cli.nucleon
+            .or_else(|| std::env::var_os("ISOTOPE_NUCLEON").map(PathBuf::from))
             .or_else(|| std::env::var_os("WINE_FEX_NUCLEON").map(PathBuf::from))
             .unwrap_or_else(|| "nucleon".into()),
     );

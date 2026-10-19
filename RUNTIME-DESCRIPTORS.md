@@ -1,4 +1,4 @@
-> This reference contract is implemented by Nucleon. Runtime production commands in older examples moved to `wine-fex-builder`; use README.md for current build commands. The builder calls `nucleon wine inspect --json` to validate it.
+> This reference contract is implemented by Nucleon. Runtime production commands in older examples moved to `isotope`; use README.md for current build commands. The builder calls `nucleon wine inspect --json` to validate it.
 
 # Runtime capabilities and launch preparation
 

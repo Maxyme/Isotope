@@ -1,4 +1,4 @@
-# Wine/FEX builder notices
+# Isotope notices
 
 Builder orchestration and portable process/archive helpers were extracted from
 Maxyme/Nucleon at b171067 (2026-10-19), under GPL-3.0-only. LICENSE retains those

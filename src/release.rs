@@ -368,7 +368,7 @@ fn snapshot_at(build: &Build, stage: &Path, builder: &Path) -> Result<Value> {
             build.sources.join("wine"),
             Some(build.recipe.sources["wine"].revision.clone()),
         ),
-        ("wine-fex", builder.to_path_buf(), None),
+        ("isotope", builder.to_path_buf(), None),
     ] {
         let revision = git(&root, &["rev-parse", "HEAD"])?;
         if let Some(expected) = expected {
@@ -452,8 +452,8 @@ pub fn build_identity(build: &Build, source_manifest: &Value) -> Result<Value> {
         .as_object()
         .context("Invalid source manifest")?
         .clone();
-    compiled.remove("wine-fex");
-    let inputs: BTreeMap<_, _> = source_manifest["wine-fex"]["files"]
+    compiled.remove("isotope");
+    let inputs: BTreeMap<_, _> = source_manifest["isotope"]["files"]
         .as_object()
         .context("Missing build inputs")?
         .iter()
@@ -641,9 +641,9 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
                 == build_identity(build, &manifest)?,
             "Sources/products changed since publisher build; run release build again"
         );
-        let binary = format!("wine-fex-{version}-macos-arm64.tar.gz");
-        let source = format!("wine-fex-{version}-sources.tar.gz");
-        let mut release = json!({"schema":2,"version":version,"channel":"experimental","x86_required":crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),"component":"wine-fex-core","guests":["x64","x86"],"graphics":"WineD3D; graphics add-ons distributed separately","postprocessing":["PE llvm-strip --strip-debug","Mach-O ad-hoc signing; no Mach-O stripping"],"toolchain":build.recipe.toolchain,"source_manifest_sha256":sha(&stage.path().join("SOURCE-MANIFEST.json"))?});
+        let binary = format!("isotope-{version}-macos-arm64.tar.gz");
+        let source = format!("isotope-{version}-sources.tar.gz");
+        let mut release = json!({"schema":2,"version":version,"channel":"experimental","x86_required":crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),"component":"isotope-core","guests":["x64","x86"],"graphics":"WineD3D; graphics add-ons distributed separately","postprocessing":["PE llvm-strip --strip-debug","Mach-O ad-hoc signing; no Mach-O stripping"],"toolchain":build.recipe.toolchain,"source_manifest_sha256":sha(&stage.path().join("SOURCE-MANIFEST.json"))?});
         write_json(&runtime.join("share/nucleon-build/release.json"), &release)?;
         archive(
             &assets.join(&binary),
@@ -670,7 +670,7 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
         fs::write(
             assets.join("RELEASE-NOTES.md"),
             format!(
-                "# Experimental ARM64 Wine/FEX core {version}\n\nCPU/core preview. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {} --register\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/wine-fex/README.md.\n",
+                "# Isotope {version}: experimental ARM64 Wine/FEX core\n\nCPU/core preview. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {} --register\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/isotope/README.md.\n",
                 sha(&assets.join(&binary))?
             ),
         )?;
@@ -826,7 +826,7 @@ mod tests {
                 .join("sources/fex/External/dependency/tracked.c")
                 .is_file()
         );
-        assert!(snapshot.join("sources/wine-fex/src/artifacts.rs").is_file());
+        assert!(snapshot.join("sources/isotope/src/artifacts.rs").is_file());
     }
     #[test]
     fn build_identity_covers_guest_dlls_and_both_native_companions() {
@@ -845,7 +845,7 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"original").unwrap();
         }
-        let sources = json!({"wine":{"files":{}},"wine-fex":{"files":{}}});
+        let sources = json!({"wine":{"files":{}},"isotope":{"files":{}}});
         let before = build_identity(&build, &sources).unwrap();
         for name in [names[1], names[4], names[5]] {
             fs::write(build.work.join(name), b"changed").unwrap();

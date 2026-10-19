@@ -20,6 +20,7 @@ static LONG CALLBACK exception_handler(EXCEPTION_POINTERS *exception)
 #endif
 
 
+#if defined(__x86_64__)
 __declspec(noinline) static uint32_t shared_read(volatile uint32_t *pointer)
 {
     return *pointer;
@@ -29,6 +30,7 @@ __declspec(noinline) static void shared_write(volatile uint32_t *pointer, uint32
 {
     *pointer = value;
 }
+#endif
 
 static DWORD WINAPI worker(void *unused)
 {
@@ -134,18 +136,27 @@ int wmain(int argc, wchar_t **argv)
     wchar_t executable[32768], command[32790];
     DWORD length = GetModuleFileNameW(NULL, executable, 32768);
     if (!length || length >= 32768) return fail("executable-path");
-    if (swprintf(command, 32790, L"\"%ls\" --child", executable) < 0) return fail("child-command");
-    STARTUPINFOW startup = {0};
-    PROCESS_INFORMATION process = {0};
-    startup.cb = sizeof(startup);
-    if (!CreateProcessW(executable, command, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process))
-        return fail("create-process");
-    DWORD exit_code = 0;
-    if (WaitForSingleObject(process.hProcess, 20000) != WAIT_OBJECT_0 ||
-        !GetExitCodeProcess(process.hProcess, &exit_code) || exit_code != 37)
-        return fail("child-exit");
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
+    /* Exercise both public launch forms: an explicit image and a command line
+     * whose executable must be parsed. Both marshal PS_ATTRIBUTE_IMAGE_NAME. */
+    for (unsigned command_only = 0; command_only < 2; ++command_only)
+    {
+        if (swprintf(command, 32790, L"\"%ls\" --child", executable) < 0)
+            return fail("child-command");
+        STARTUPINFOW startup = {0};
+        PROCESS_INFORMATION process = {0};
+        startup.cb = sizeof(startup);
+        if (!CreateProcessW(command_only ? NULL : executable, command, NULL, NULL,
+                            FALSE, 0, NULL, NULL, &startup, &process))
+            return fail(command_only ? "create-process-command-line" : "create-process");
+        DWORD exit_code = 0;
+        if (WaitForSingleObject(process.hProcess, 20000) != WAIT_OBJECT_0 ||
+            !GetExitCodeProcess(process.hProcess, &exit_code) || exit_code != 37)
+            return fail("child-exit");
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        printf("NUCLEON_FEX_PASS child-process-%s\n",
+               command_only ? "command-line" : "explicit-image");
+    }
     puts("NUCLEON_FEX_PASS child-process");
     puts("NUCLEON_FEX_SMOKE_OK");
     return 0;
