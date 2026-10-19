@@ -3,6 +3,7 @@ mod artifacts;
 mod atomic;
 mod build;
 mod common;
+mod configure;
 mod consumer;
 mod downloads;
 mod frontend;

@@ -661,6 +661,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
+name = "isotope"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "ctrlc",
+ "env_logger",
+ "flate2",
+ "log",
+ "lzma-rs",
+ "object",
+ "rustix",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shlex",
+ "sysinfo",
+ "tar",
+ "tempfile",
+ "toml",
+ "ureq",
+ "walkdir",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1657,35 +1686,6 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "isotope"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "ctrlc",
- "env_logger",
- "flate2",
- "log",
- "lzma-rs",
- "object",
- "rustix",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "shlex",
- "sysinfo",
- "tar",
- "tempfile",
- "toml",
- "ureq",
- "walkdir",
- "zip",
- "zstd",
-]
 
 [[package]]
 name = "winnow"

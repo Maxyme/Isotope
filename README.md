@@ -27,6 +27,15 @@ target/release/isotope fex build-wine
 
 `--work` defaults to `target/arm64-fex`. Existing local workspaces can be supplied
 explicitly; build inputs and receipts must still match pinned recipes.
+
+Wine configuration is recorded in `wine-build/isotope-configure.json` and copied
+into runtime provenance. Reuse requires the same source path/revision/diff,
+patches, configuration arguments, compiler identities, toolchain pin, SDK identity
+and explicit configure environment. Unknown shell variables and user Autoconf
+site scripts are excluded from configure. A changed input, missing/corrupt receipt
+or incomplete build directory stops before compilation; use a fresh `--work`
+directory. Existing build products are preserved. Pre-receipt workspaces must also
+start fresh; Isotope never adopts their Makefile as proof of configuration.
 `fex probe`, `fex probe-unixlib`, `fex check-reference` and the `dx12`/`frontend`
 commands retain the experimental probes and assembly workflows. Reference app
 components are local diagnostics, never inputs to the core release publisher.

@@ -1,8 +1,10 @@
 //! Supported Tolkara Wine/FEX build route. All products stay in the developer workspace.
 use crate::common::{
     ArchivePin, Environment, Pin, build_environment, checkout, copy, fetch_archive, git,
-    hash_files, json, output, p, patches, repo, require_native, run, set, sha, write_json,
+    hash_files, json, output, p, patches, repo, require_native, run, set, sha, source_diff,
+    write_json,
 };
+use crate::configure::{ConfigureInputs, SdkIdentity, ToolIdentity, configure_once};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -299,6 +301,88 @@ impl Build {
         patches(&self.wine, &names)?;
         Ok(names)
     }
+    fn configure_inputs(
+        &self,
+        patches: &[String],
+        sdk: Option<&Path>,
+        arguments: &[String],
+        env: &Environment,
+    ) -> Result<ConfigureInputs> {
+        let mut tools = BTreeMap::new();
+        for (name, compiler) in [
+            ("cc", PathBuf::from(&env[std::ffi::OsStr::new("CC")])),
+            ("cxx", PathBuf::from(&env[std::ffi::OsStr::new("CXX")])),
+            ("mingw", self.compiler.join("bin/clang")),
+        ] {
+            tools.insert(
+                name.into(),
+                ToolIdentity {
+                    path: compiler.canonicalize()?,
+                    sha256: sha(&compiler)?,
+                    version: output(&compiler, &["--version".into()], Some(env), None)?,
+                },
+            );
+        }
+        let native_sdk = PathBuf::from(output(
+            "xcrun",
+            &["--show-sdk-path".into()],
+            Some(env),
+            None,
+        )?)
+        .canonicalize()?;
+        let native_sdk = SdkIdentity {
+            files: hash_files(&native_sdk, &["SDKSettings.json".into()])?,
+            root: native_sdk,
+            version: output("xcrun", &["--show-sdk-version".into()], Some(env), None)?,
+        };
+        let graphics_sdk = sdk
+            .map(|sdk| -> Result<SdkIdentity> {
+                let sdk = sdk.canonicalize()?;
+                let mut files = Vec::new();
+                for entry in walkdir::WalkDir::new(sdk.join("include"))
+                    .follow_links(false)
+                    .sort_by_file_name()
+                {
+                    let entry = entry?;
+                    if entry.path().is_file() {
+                        files.push(p(entry.path().strip_prefix(&sdk)?));
+                    }
+                }
+                files.push("lib/libvulkan.1.dylib".into());
+                Ok(SdkIdentity {
+                    root: sdk.clone(),
+                    version: "content-addressed".into(),
+                    files: hash_files(&sdk, &files)?,
+                })
+            })
+            .transpose()?;
+        Ok(ConfigureInputs {
+            build_root: self.work.join("wine-build").canonicalize()?,
+            source_root: self.wine.canonicalize()?,
+            source_revision: git(&self.wine, &["rev-parse", "HEAD"])?,
+            source_diff_sha256: source_diff(&self.wine)?,
+            patches: hash_files(&repo(), patches)?,
+            toolchain_sha256: self.recipe.toolchain.sha256.clone(),
+            tools,
+            native_sdk,
+            graphics_sdk,
+            arguments: arguments.to_vec(),
+            environment: env
+                .iter()
+                .map(|(name, value)| -> Result<_> {
+                    Ok((
+                        name.to_str()
+                            .context("Non-UTF-8 configure environment key")?
+                            .into(),
+                        value
+                            .to_str()
+                            .context("Non-UTF-8 configure environment value")?
+                            .into(),
+                    ))
+                })
+                .collect::<Result<_>>()?,
+        })
+    }
     pub fn build_wine(&self, extra: &[String], sdk: Option<&Path>) -> Result<()> {
         let names = self.prepare_wine(extra)?;
         let build = self.work.join("wine-build");
@@ -322,26 +406,28 @@ impl Build {
             );
             set(&mut env, "DYLD_LIBRARY_PATH", sdk.join("lib"));
         }
-        if !build.join("Makefile").exists() {
-            let mut args = vec![
-                "--prefix=/".into(),
-                "--bindir=/bin".into(),
-                "--libdir=/lib".into(),
-                "--enable-archs=arm64ec,aarch64,i386".into(),
-                format!("--with-mingw={}/bin/clang", self.compiler.display()),
-            ];
-            args.extend(
-                self.recipe
-                    .wine
-                    .configure
-                    .iter()
-                    .filter(|v| sdk.is_none() || *v != "--without-vulkan")
-                    .cloned(),
-            );
-            if sdk.is_some() {
-                args.push("--with-vulkan".into());
-            }
-            args.push("enable_amd_ags_x64=no".into());
+        let mut args = vec![
+            "--prefix=/".into(),
+            "--bindir=/bin".into(),
+            "--libdir=/lib".into(),
+            "--enable-archs=arm64ec,aarch64,i386".into(),
+            format!("--with-mingw={}/bin/clang", self.compiler.display()),
+        ];
+        args.extend(
+            self.recipe
+                .wine
+                .configure
+                .iter()
+                .filter(|v| sdk.is_none() || *v != "--without-vulkan")
+                .cloned(),
+        );
+        if sdk.is_some() {
+            args.push("--with-vulkan".into());
+        }
+        args.push("enable_amd_ags_x64=no".into());
+        let env = wine_configure_environment(&env);
+        let inputs = self.configure_inputs(&names, sdk, &args, &env)?;
+        configure_once(&build, &inputs, || {
             run(
                 self.wine.join("configure"),
                 &args,
@@ -350,8 +436,8 @@ impl Build {
                 Some(&self.logs.join("wine-configure.log")),
                 4 * 60 * 60,
                 0,
-            )?;
-        }
+            )
+        })?;
         if sdk.is_some() {
             ensure!(
                 fs::read_to_string(build.join("include/config.h"))?
@@ -386,6 +472,10 @@ impl Build {
     pub fn record_wine(&self, names: &[String]) -> Result<()> {
         let runtime = self.work.join("runtime");
         let provenance = runtime.join("share/nucleon-build");
+        copy(
+            &self.work.join("wine-build/isotope-configure.json"),
+            &provenance.join("isotope-configure.json"),
+        )?;
         copy(&repo().join(RECIPE), &provenance.join("arm64-fex.toml"))?;
         for name in names {
             copy(
@@ -672,6 +762,69 @@ impl Build {
     }
 }
 
+/// Only declared build settings reach configure, so its recorded environment is
+/// complete without persisting unrelated shell variables or credentials.
+fn wine_configure_environment(env: &Environment) -> Environment {
+    let names = [
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        "DEVELOPER_DIR",
+        "SDKROOT",
+        "CC",
+        "CXX",
+        "CPP",
+        "CXXCPP",
+        "CFLAGS",
+        "CXXFLAGS",
+        "CPPFLAGS",
+        "LDFLAGS",
+        "LIBS",
+        "AR",
+        "AS",
+        "LD",
+        "NM",
+        "RANLIB",
+        "STRIP",
+        "OBJC",
+        "OBJCFLAGS",
+        "OBJCXX",
+        "OBJCXXFLAGS",
+        "BISON",
+        "FLEX",
+        "YACC",
+        "LEX",
+        "MAKE",
+        "MAKEFLAGS",
+        "MFLAGS",
+        "CPATH",
+        "C_INCLUDE_PATH",
+        "CPLUS_INCLUDE_PATH",
+        "LIBRARY_PATH",
+        "MACOSX_DEPLOYMENT_TARGET",
+        "PKG_CONFIG",
+        "PKG_CONFIG_PATH",
+        "PKG_CONFIG_LIBDIR",
+        "PKG_CONFIG_SYSROOT_DIR",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+    ];
+    let mut result: Environment = env
+        .iter()
+        .filter(|(name, _)| {
+            name.to_str()
+                .is_some_and(|name| names.contains(&name) || name.contains("_cv_"))
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    // Never let unrecorded per-user Autoconf site scripts change configuration.
+    set(&mut result, "CONFIG_SITE", "/dev/null");
+    result
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn marker_run(
     program: &Path,
@@ -717,6 +870,30 @@ pub fn finish_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn configure_environment_excludes_secrets_and_disables_site_scripts() {
+        let env = [
+            ("PATH", "/tools"),
+            ("CC", "/compiler"),
+            ("CFLAGS", "-O2"),
+            ("DEVELOPER_DIR", "/xcode"),
+            ("ac_cv_test", "yes"),
+            ("CONFIG_SITE", "/unrecorded/site"),
+            ("GITHUB_TOKEN", "secret"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
+        let sanitized = wine_configure_environment(&env);
+        assert!(!sanitized.contains_key(std::ffi::OsStr::new("GITHUB_TOKEN")));
+        for name in ["PATH", "CC", "CFLAGS", "DEVELOPER_DIR", "ac_cv_test"] {
+            assert_eq!(
+                sanitized[std::ffi::OsStr::new(name)],
+                env[std::ffi::OsStr::new(name)]
+            );
+        }
+        assert_eq!(sanitized[std::ffi::OsStr::new("CONFIG_SITE")], "/dev/null");
+    }
     #[test]
     fn cleanup_failure_does_not_replace_primary_probe_failure() {
         let dir = tempfile::tempdir().unwrap();
