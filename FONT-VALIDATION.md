@@ -26,6 +26,8 @@ Both games were tested with fresh isolated prefixes and the repaired Wine core, 
 - DiRT Rally 2.0 / DX11: completed a 180-second bounded launch, retained its game process, generated shader cache through a 93-character Wine path, and had no logged Metal assertion or `VK_ERROR`. Its persisted caption/menu metrics are sane. The former long-cache-path crash did not recur.
 - DMC5 / DX12: completed a 240-second bounded launch and creates a normal 1518×962 swapchain. The previous 32859×2 request and Metal size assertion did not recur. VKD3D still warns that `VK_EXT_dynamic_rendering_unused_attachments` is missing; this remains a graphics compatibility limitation.
 
-Menu visibility, input, driving and combat remain unconfirmed. A live process, shader cache, normal swapchain or bounded exit zero is not a gameplay pass. The user has been asked for the visual/menu result; earlier negative window reports were for pre-fix runs.
+The user confirmed **no game window appeared for either repaired-runtime run**. Both games therefore fail visible launch validation. Menu, input, driving and combat were not reached. A live process, shader cache, normal swapchain or bounded exit zero is not a gameplay pass. The font/geometry and cache fixes remain verified independently; native window visibility/activation needs further investigation.
 
 DMC5 settings were restored byte-for-byte. The previous runtime driver is unchanged. User prefixes/saves were preserved; only isolated test prefixes were regenerated. Full receipts, hashes and paths are recorded in FONT-VALIDATION.json. Logs remain under target/font-validation/.
+
+Follow-up: the runs automatically closed after 180/240 seconds. Confirmation of whether the user watched during those intervals is pending. Native UI inspection also fails for Steam with ScreenCaptureKit error -3811, so the capture-tool failure itself is not specific evidence about Wine window registration.
