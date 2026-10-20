@@ -1,9 +1,13 @@
 //! Source-inclusive core releases. x64 is mandatory; x86 failures are recorded unless strict mode is requested.
+use crate::receipts::{
+    BuildStatus, GuestOutcome, Schema2, UnixBuildReceipt, ValidationReport, ValidationStatus,
+    WineBuildReceipt,
+};
 use crate::{
     build::{Build, RECIPE, marker_run},
     common::{
-        clean_environment, copy, copy_tree, git, hash_files, json, key, p, patches, repo,
-        require_native, run, set, sha, write_json,
+        clean_environment, copy, copy_tree, git, hash_files, json, key, p, patches, read_json,
+        repo, require_native, run, set, sha, write_json,
     },
 };
 use anyhow::{Context, Result, ensure};
@@ -169,16 +173,13 @@ pub fn prepare_sources(build: &Build, version: &str) -> Result<()> {
     build.prepare_wine(&[])?;
     let date = git(&repo(), &["show", "-s", "--format=%cs", "HEAD"])?;
     for (root, patch_names) in [
-        (&build.wine, &build.recipe.wine.tolkara.patches),
-        (
-            &build.fex,
-            &build.recipe.alternatives["tolkara"]["fex"].unix_patches,
-        ),
+        (&build.wine, &build.recipe.wine.runtime.patches),
+        (&build.fex, &build.recipe.sources.fex.unix_patches),
     ] {
         patches(root, patch_names)?;
         let names: Vec<_> = git(root, &["diff", "--name-only", "HEAD"])?
             .lines()
-            .filter(|s| *s != build.recipe.wine.tolkara.shared_data_helper)
+            .filter(|s| *s != build.recipe.wine.runtime.shared_data_helper)
             .map(str::to_owned)
             .collect();
         mark_changes(root, &names, version, &date)?;
@@ -203,19 +204,16 @@ pub fn core_descriptor() -> String {
 }
 pub fn stage_core(build: &Build, target: &Path) -> Result<()> {
     let runtime = build.work.join("runtime");
-    let receipt = json(&runtime.join("build.json"))?;
+    let receipt: WineBuildReceipt = read_json(&runtime.join("build.json"))?;
     ensure!(
-        receipt["patches"]
-            == serde_json::to_value(hash_files(&repo(), &build.recipe.wine.tolkara.patches)?)?
-            && receipt["recipe_sha256"] == sha(&repo().join(RECIPE))?,
+        receipt.status == BuildStatus::BuiltNotExecutionValidated
+            && receipt.patches == hash_files(&repo(), &build.recipe.wine.runtime.patches)?
+            && receipt.recipe_sha256 == sha(&repo().join(RECIPE))?,
         "Wine build does not match release recipe; rebuild Wine"
     );
-    for (name, digest) in receipt["host_files"]
-        .as_object()
-        .context("Missing build files")?
-    {
+    for (name, digest) in &receipt.host_files {
         ensure!(
-            sha(&runtime.join(name))? == digest.as_str().context("Invalid file digest")?,
+            sha(&runtime.join(name))? == *digest,
             "Wine build receipt mismatch: {name}"
         );
     }
@@ -252,13 +250,10 @@ pub fn stage_core(build: &Build, target: &Path) -> Result<()> {
         )?;
     }
     let unix = build.work.join("fex/unixlib");
-    let unix_receipt = json(&unix.join("build.json"))?;
-    for (name, digest) in unix_receipt["files"]
-        .as_object()
-        .context("Missing FEX companion files")?
-    {
+    let unix_receipt: UnixBuildReceipt = read_json(&unix.join("build.json"))?;
+    for (name, digest) in &unix_receipt.files {
         ensure!(
-            sha(&unix.join(name))? == digest.as_str().context("Invalid FEX digest")?,
+            sha(&unix.join(name))? == *digest,
             "FEX companion receipt mismatch"
         );
         copy(
@@ -352,21 +347,17 @@ fn snapshot_at(build: &Build, stage: &Path, builder: &Path) -> Result<Value> {
         (
             "wine",
             build.wine.clone(),
-            Some(
-                build.recipe.alternatives["tolkara"]["wine"]
-                    .revision
-                    .clone(),
-            ),
+            Some(build.recipe.sources.wine.revision.clone()),
         ),
         (
             "fex",
             build.fex.clone(),
-            Some(build.recipe.alternatives["tolkara"]["fex"].revision.clone()),
+            Some(build.recipe.sources.fex.revision.clone()),
         ),
         (
             "shared-data-origin",
-            build.sources.join("wine"),
-            Some(build.recipe.sources["wine"].revision.clone()),
+            build.sources.join("shared-data"),
+            Some(build.recipe.sources.shared_data.revision.clone()),
         ),
         ("isotope", builder.to_path_buf(), None),
     ] {
@@ -468,22 +459,30 @@ pub fn build_identity(build: &Build, source_manifest: &Value) -> Result<Value> {
     compiled.insert("build-scripts".into(), serde_json::to_value(inputs)?);
     Ok(json!({"schema":2,"compiled_sources_sha256":key(&compiled)?,"files":products}))
 }
-fn guest_outcome(guest: &str, result: Result<()>, require_x86: bool) -> Result<Value> {
+fn guest_outcome(guest: &str, result: Result<()>, require_x86: bool) -> Result<GuestOutcome> {
     match result {
-        Ok(()) => Ok(json!({"status":"PASSED"})),
+        Ok(()) => Ok(GuestOutcome::new(ValidationStatus::Passed)),
         Err(error)
             if guest == "x86"
                 && !require_x86
                 && !crate::common::CANCELLED.load(std::sync::atomic::Ordering::SeqCst) =>
         {
             log::warn!("Optional x86 validation failed: {error:#}");
-            Ok(json!({"status":"FAILED_OPTIONAL","error":format!("{error:#}")}))
+            Ok(GuestOutcome {
+                status: ValidationStatus::FailedOptional,
+                error: Some(format!("{error:#}")),
+            })
         }
         Err(error) => Err(error),
     }
 }
 
-fn validate_install(build: &Build, archive: &Path, work: &Path, logs: &Path) -> Result<Value> {
+fn validate_install(
+    build: &Build,
+    archive: &Path,
+    work: &Path,
+    logs: &Path,
+) -> Result<ValidationReport> {
     let descriptor = crate::consumer::install_archive(archive, &work.join("support"))?;
     let runtime = descriptor.root.clone();
     let mut env = clean_environment();
@@ -510,7 +509,18 @@ fn validate_install(build: &Build, archive: &Path, work: &Path, logs: &Path) -> 
     ] {
         set(&mut env, k, v);
     }
-    let mut validation = json!({"schema":2,"managed_archive_import":"PASSED","integrity_and_native_dependencies":"PASSED","guest_smoke":{},"x86_required":crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),"steam":"NOT_RUN","gameplay":"NOT_RUN","status":"TESTING"});
+    let mut validation = ValidationReport {
+        schema: Schema2,
+        managed_archive_import: ValidationStatus::Passed,
+        integrity_and_native_dependencies: ValidationStatus::Passed,
+        guest_smoke: BTreeMap::new(),
+        x86_required: crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),
+        steam: ValidationStatus::NotRun,
+        gameplay: ValidationStatus::NotRun,
+        status: ValidationStatus::Testing,
+        prefix_cleanup: None,
+        error: None,
+    };
     write_json(&logs.join("validation.json"), &validation)?;
     let result = (|| {
         run(
@@ -523,7 +533,9 @@ fn validate_install(build: &Build, archive: &Path, work: &Path, logs: &Path) -> 
             0,
         )?;
         for (guest, triple, bits) in [("x64", "x86_64", 64), ("x86", "i686", 32)] {
-            validation["guest_smoke"][guest] = "TESTING".into();
+            validation
+                .guest_smoke
+                .insert(guest.into(), GuestOutcome::new(ValidationStatus::Testing));
             write_json(&logs.join("validation.json"), &validation)?;
             let exe = logs.join(format!("smoke-{guest}.exe"));
             build.run(
@@ -560,37 +572,43 @@ fn validate_install(build: &Build, archive: &Path, work: &Path, logs: &Path) -> 
                 );
                 Ok(())
             })();
-            validation["guest_smoke"][guest] = guest_outcome(
-                guest,
-                guest_result,
-                crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),
-            )?;
+            validation.guest_smoke.insert(
+                guest.into(),
+                guest_outcome(
+                    guest,
+                    guest_result,
+                    crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),
+                )?,
+            );
             write_json(&logs.join("validation.json"), &validation)?;
         }
         Ok(())
     })();
     let wait = crate::common::cleanup_server(&descriptor.server, &env, &logs.join("cleanup.log"));
-    validation["prefix_cleanup"] = if wait.is_ok() { "PASSED" } else { "FAILED" }.into();
+    validation.prefix_cleanup = Some(if wait.is_ok() {
+        ValidationStatus::Passed
+    } else {
+        ValidationStatus::Failed
+    });
     let result = result.and(wait);
     if let Err(error) = &result {
-        for status in validation["guest_smoke"]
-            .as_object_mut()
-            .unwrap()
-            .values_mut()
-        {
-            if status == "TESTING" {
-                *status = "FAILED".into();
+        for outcome in validation.guest_smoke.values_mut() {
+            if outcome.status == ValidationStatus::Testing {
+                outcome.status = ValidationStatus::Failed;
             }
         }
-        validation["status"] = "FAILED".into();
-        validation["error"] = format!("{error:#}").into();
+        validation.status = ValidationStatus::Failed;
+        validation.error = Some(format!("{error:#}"));
     } else {
-        validation["status"] = if validation["guest_smoke"]["x86"]["status"] == "FAILED_OPTIONAL" {
-            "PASSED_WITH_OPTIONAL_FAILURE"
+        validation.status = if validation
+            .guest_smoke
+            .get("x86")
+            .is_some_and(|outcome| outcome.status == ValidationStatus::FailedOptional)
+        {
+            ValidationStatus::PassedWithOptionalFailure
         } else {
-            "PASSED"
-        }
-        .into();
+            ValidationStatus::Passed
+        };
     }
     write_json(&logs.join("validation.json"), &validation)?;
     result?;
@@ -658,12 +676,12 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
             .collect::<Vec<_>>();
         sources.push("SOURCE-MANIFEST.json".into());
         archive(&assets.join(&source), stage.path(), &sources, "", epoch)?;
-        release["validation"] = validate_install(
+        release["validation"] = serde_json::to_value(validate_install(
             build,
             &assets.join(&binary),
             &stage.path().join("support"),
             &logs,
-        )?;
+        )?)?;
         release["binary"] = json!({"file":binary,"sha256":sha(&assets.join(&binary))?});
         release["sources"] = json!({"file":source,"sha256":sha(&assets.join(&source))?});
         write_json(&assets.join("runtime-release.json"), &release)?;
@@ -743,14 +761,16 @@ mod tests {
     #[test]
     fn only_x86_failures_are_optional_and_strict_mode_restores_the_gate() {
         assert_eq!(
-            guest_outcome("x86", Err(anyhow::anyhow!("error 998")), false).unwrap()["status"],
-            "FAILED_OPTIONAL"
+            guest_outcome("x86", Err(anyhow::anyhow!("error 998")), false)
+                .unwrap()
+                .status,
+            ValidationStatus::FailedOptional
         );
         assert!(guest_outcome("x86", Err(anyhow::anyhow!("error 998")), true).is_err());
         assert!(guest_outcome("x64", Err(anyhow::anyhow!("failed")), false).is_err());
         assert_eq!(
-            guest_outcome("x86", Ok(()), false).unwrap()["status"],
-            "PASSED"
+            guest_outcome("x86", Ok(()), false).unwrap().status,
+            ValidationStatus::Passed
         );
     }
     #[test]
@@ -759,17 +779,14 @@ mod tests {
         let mut build = Build::new(dir.path(), 1).unwrap();
         for (root, key) in [(&build.wine, "wine"), (&build.fex, "fex")] {
             let revision = fixture_repo(root);
-            build
-                .recipe
-                .alternatives
-                .get_mut("tolkara")
-                .unwrap()
-                .get_mut(key)
-                .unwrap()
-                .revision = revision;
+            if key == "wine" {
+                build.recipe.sources.wine.revision = revision;
+            } else {
+                build.recipe.sources.fex.revision = revision;
+            }
         }
-        build.recipe.sources.get_mut("wine").unwrap().revision =
-            fixture_repo(&build.sources.join("wine"));
+        build.recipe.sources.shared_data.revision =
+            fixture_repo(&build.sources.join("shared-data"));
         let dependency = dir.path().join("dependency");
         fixture_repo(&dependency);
         git(
@@ -870,7 +887,27 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, native).unwrap();
         }
-        write_json(&runtime.join("build.json"),&json!({"patches":hash_files(&repo(),&build.recipe.wine.tolkara.patches).unwrap(),"recipe_sha256":sha(&repo().join(RECIPE)).unwrap(),"host_files":hash_files(&runtime,&names).unwrap()})).unwrap();
+        write_json(
+            &runtime.join("build.json"),
+            &WineBuildReceipt {
+                schema: Schema2,
+                status: BuildStatus::BuiltNotExecutionValidated,
+                variant: "isotope".into(),
+                recipe_sha256: sha(&repo().join(RECIPE)).unwrap(),
+                sources: build.source_pins(),
+                patches: hash_files(&repo(), &build.recipe.wine.runtime.patches).unwrap(),
+                toolchain_sha256: build.recipe.toolchain.sha256.clone(),
+                sdk: "fixture".into(),
+                native_compiler: None,
+                host_files: hash_files(&runtime, &names).unwrap(),
+                features: "fixture".into(),
+                graphics_boundary_files: None,
+                dx12_recipe_sha256: None,
+                vulkan_sdk: None,
+                vulkan_loader_sha256: None,
+            },
+        )
+        .unwrap();
         for (sub, name) in [
             ("arm64ec/Bin", "libarm64ecfex.dll"),
             ("wow64/Bin", "libwow64fex.dll"),
@@ -890,7 +927,22 @@ mod tests {
             .unwrap();
         }
         let unix = build.work.join("fex/unixlib");
-        write_json(&unix.join("build.json"),&json!({"files":hash_files(&unix,&["libarm64ecfex.so".into(),"libwow64fex.so".into()]).unwrap()})).unwrap();
+        write_json(
+            &unix.join("build.json"),
+            &UnixBuildReceipt {
+                schema: Schema2,
+                inputs: crate::receipts::UnixBuildInputs {
+                    revision: "fixture".into(),
+                    source: "fixture".into(),
+                    header: "fixture".into(),
+                    compiler: "fixture".into(),
+                    patches: Default::default(),
+                },
+                files: hash_files(&unix, &["libarm64ecfex.so".into(), "libwow64fex.so".into()])
+                    .unwrap(),
+            },
+        )
+        .unwrap();
         for triple in ["arm64ec", "aarch64", "i686"] {
             let path = build
                 .compiler

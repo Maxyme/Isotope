@@ -1,9 +1,5 @@
 schema = 1
 
-[integration]
-prefix_family = "tolkara-fex"
-prefix_abi = 1
-
 [steamac]
 url = "https://github.com/fxgl/steamac.git"
 revision = "6ef3992d869e41291bb2841bef2e71ae318d2a02"
@@ -20,13 +16,7 @@ packaging = "25.0"
 markupsafe = "3.0.4"
 
 [wine]
-patches = ["assets/patches/wine-tolkara-steamclient-redirect.patch",
-           "assets/patches/wine-tolkara-process-exit-trace.patch",
-           "assets/patches/wine-tolkara-quit-message-trace.patch"]
-
-[graphics]
-vkd3d_version = "3.0.1"
-dxgi_version = "3.1"
+patches = []
 
 [archives.vkd3d]
 url = "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v3.0.1/vkd3d-proton-3.0.1.tar.zst"

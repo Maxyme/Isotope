@@ -9,6 +9,7 @@ mod downloads;
 mod frontend;
 mod graphics;
 mod process;
+mod receipts;
 mod release;
 static REQUIRE_X86: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static NUCLEON: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -31,7 +32,7 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Commands {
-    /// Build or probe the supported native Tolkara Wine/FEX runtime
+    /// Build or probe the pinned native Wine/FEX runtime
     Fex(FexArgs),
     /// Build/package the core runtime; x86 failures are temporarily optional
     Release(ReleaseArgs),

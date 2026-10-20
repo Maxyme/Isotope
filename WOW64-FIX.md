@@ -17,10 +17,10 @@ raw number as a host pointer, both for file redirection and for `NtCreateUserPro
 It bypassed the fork's pointer conversion. The control trace shows an ARM64 read
 fault at `0x16fb60`, with the relocated window at `0x7000000000`.
 
-The new `wine-tolkara-wow64-process-image-pointer.patch` converts the image-name
+The image-name fix, now carried in `wine-upstream-darwin.patch`, converts the image-name
 pointer with `ULongToPtr` before either consumer reads it. It changes that pointer
-case only, preserving scalar and handle semantics. The pinned Wine revision is
-unchanged, and the patch is included in the maintained Tolkara build recipe.
+case only, preserving scalar and handle semantics. The original investigation kept the Wine revision unchanged. The fix is now
+preserved in the upstream Wine 11.20 Darwin overlay.
 
 The fork's [32-bit window design](https://github.com/tolkara/tolkara/blob/main/docs/WINDOWS.md)
 explains the same address mapping. The diagnosis above comes from the local

@@ -31,7 +31,7 @@ The descriptor records:
   must export `vkGetInstanceProcAddr`.
 - Steam bridge protocol (`bridge` or `valve-redirect`) and whether to use the
   Windows Steam helper by default. An explicit per-game helper choice wins.
-- Required native prefix family and ABI (`[prefix] family = "tolkara-fex"`,
+- Required native prefix family and ABI (`[prefix] family = "isotope-fex"`,
   `abi = 1`). Families contain lowercase letters, digits, `_` or `-`; the ABI
   is positive and changes when an existing prefix cannot be safely reused.
 - Correctness settings `FEX_TSOENABLED=1` and, for Wine builds that need the

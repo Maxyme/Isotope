@@ -12,7 +12,7 @@ steam_protocol = "valve-redirect"
 steam_helper = true
 
 [prefix]
-family = "tolkara-fex"
+family = "isotope-fex"
 abi = 1
 
 [[emulators]]

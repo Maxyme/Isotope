@@ -1,8 +1,8 @@
 diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
-index 8208cc1..5aba1d5 100644
+index 8e8a6936..d88379d4 100644
 --- a/dlls/ntdll/loader.c
 +++ b/dlls/ntdll/loader.c
-@@ -2247,6 +2247,88 @@ done:
+@@ -2264,6 +2264,88 @@ done:
   *
   * Build the module data for a mapped dll.
   */
@@ -90,20 +90,127 @@ index 8208cc1..5aba1d5 100644
 +
  static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name, void **module,
                                const SECTION_IMAGE_INFORMATION *image_info, const struct file_id *id,
-                               DWORD flags, BOOL system, WINE_MODREF **pwm )
-@@ -2278,6 +2360,15 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name,
+                               DWORD flags, BOOL system, BOOL redirected, WINE_MODREF **pwm )
+@@ -2295,6 +2377,15 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name,
+     wm->system = system;
  
      update_load_config( *module );
- 
 +#ifdef __x86_64__
 +    if (!is_builtin)
 +    {
 +        BOOL did_redirect;
 +        if ((status = nucleon_redirect_steamclient( wm, load_path, &did_redirect ))) return status;
-+        if (did_redirect) flags |= DONT_RESOLVE_DLL_REFERENCES;
++        if (did_redirect) flags |= LDR_DONT_RESOLVE_REFS;
 +    }
 +#endif
 +
+ 
      /* fixup imports */
  
-     if (!(flags & DONT_RESOLVE_DLL_REFERENCES) &&
+@@ -4468,6 +4559,9 @@ void loader_init( CONTEXT *context, void **entry )
+         void *ntdll_module;
+         unsigned int i;
+ 
++        /* where the Unix side could put the KUSER_SHARED_DATA page */
++        WINE_UNIX_CALL( unix_get_user_shared_data, &user_shared_data );
++
+         peb->LdrData            = &ldr;
+         peb->FastPebLock        = &peb_lock;
+         peb->TlsBitmap          = &tls_bitmap;
+diff --git a/dlls/winemac.drv/cocoa_window.m b/dlls/winemac.drv/cocoa_window.m
+index e15f7083..bf118c4c 100644
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -3613,6 +3613,13 @@ void macdrv_release_metal_device(id<MTLDevice> device)
+ }
+ }
+ 
++WineContentView *macdrv_window_get_content_view(WineWindow *window)
++{
++    __block WineContentView *view;
++    OnMainThread(^{ view = (WineContentView *)[window contentView]; });
++    return view;
++}
++
+ WineMetalView *macdrv_view_create_metal_view(WineContentView *view, id<MTLDevice> device)
+ {
+     __block WineMetalView *metalView;
+diff --git a/dlls/winemac.drv/macdrv_cocoa.h b/dlls/winemac.drv/macdrv_cocoa.h
+index 5157b38c..b47d60d2 100644
+--- a/dlls/winemac.drv/macdrv_cocoa.h
++++ b/dlls/winemac.drv/macdrv_cocoa.h
+@@ -500,6 +500,7 @@ extern void macdrv_order_cocoa_window(WineWindow *window, WineWindow *prev,
+ extern void macdrv_remove_view_opengl_context(WineContentView *view, WineOpenGLContext *context);
+ extern MTLDevice_id macdrv_create_metal_device(void);
+ extern void macdrv_release_metal_device(MTLDevice_id device);
++extern WineContentView *macdrv_window_get_content_view(WineWindow *window);
+ extern WineMetalView *macdrv_view_create_metal_view(WineContentView *view, MTLDevice_id device);
+ extern CAMetalLayer *macdrv_view_get_metal_layer(WineMetalView *view);
+ extern void macdrv_view_release_metal_view(WineMetalView *view);
+diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
+index 552971f5..fb701dcf 100644
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -208,6 +208,62 @@ void release_win_data(struct macdrv_win_data *data)
+ }
+ 
+ 
++struct dxmt_window_data
++{
++    HWND hwnd;
++    WineWindow * cocoa_window;
++    WineContentView * cocoa_view;
++    WineContentView * client_cocoa_view;
++};
++
++static _Thread_local struct dxmt_window_data dxmt_data;
++static _Thread_local struct macdrv_win_data *dxmt_locked_data;
++
++static struct dxmt_window_data *dxmt_get_win_data(HWND hwnd)
++{
++    struct macdrv_win_data *data = get_win_data(hwnd);
++    if (!data) return NULL;
++    dxmt_locked_data = data;
++    dxmt_data.hwnd = data->hwnd;
++    dxmt_data.cocoa_window = data->cocoa_window;
++    dxmt_data.cocoa_view = data->client_view;
++    if (!dxmt_data.cocoa_view && data->cocoa_window)
++        dxmt_data.cocoa_view = macdrv_window_get_content_view(data->cocoa_window);
++    dxmt_data.client_cocoa_view = dxmt_data.cocoa_view;
++    return &dxmt_data;
++}
++
++static void dxmt_release_win_data(struct dxmt_window_data *data)
++{
++    if (!data) return;
++    release_win_data(dxmt_locked_data);
++    dxmt_locked_data = NULL;
++}
++
++/* Preserve the reference's ten-slot table; only its window/Metal entries are
++ * consumed by winemetal. The unused display/main-thread slots stay NULL.
++ */
++DECLSPEC_EXPORT const struct
++{
++    void (*init_display_devices)(BOOL);
++    struct dxmt_window_data *(*get_win_data)(HWND);
++    void (*release_win_data)(struct dxmt_window_data *);
++    WineWindow * (*get_cocoa_window)(HWND, bool);
++    MTLDevice_id (*create_metal_device)(void);
++    void (*release_metal_device)(MTLDevice_id);
++    WineMetalView * (*create_metal_view)(WineContentView *, MTLDevice_id);
++    CAMetalLayer * (*get_metal_layer)(WineMetalView *);
++    void (*release_metal_view)(WineMetalView *);
++    void (*on_main_thread)(void *);
++} macdrv_functions =
++{
++    NULL, dxmt_get_win_data, dxmt_release_win_data, macdrv_get_cocoa_window,
++    macdrv_create_metal_device, macdrv_release_metal_device,
++    macdrv_view_create_metal_view, macdrv_view_get_metal_layer,
++    macdrv_view_release_metal_view, NULL
++};
++
++
+ /***********************************************************************
+  *              macdrv_get_cocoa_window
+  *

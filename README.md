@@ -2,7 +2,7 @@
 
 Native ARM64 Wine/FEX runtimes for macOS.
 
-Standalone Rust tooling for the pinned Tolkara ARM64 Wine/FEX implementation on
+Standalone Rust tooling for the pinned upstream Wine 11.20 / FEX-2610 implementation on
 Apple Silicon macOS. This repository owns compilation, patches, experimental
 CPU/graphics probes, runtime assembly and source-inclusive release publishing.
 Nucleon owns installation, ABI/integrity checks, Steam integration and game
@@ -26,7 +26,10 @@ target/release/isotope fex build-wine
 ```
 
 `--work` defaults to `target/arm64-fex`. Existing local workspaces can be supplied
-explicitly; build inputs and receipts must still match pinned recipes.
+explicitly; build inputs and receipts must still match pinned recipes. The upstream
+migration uses `core/`, `sources/wine`, `sources/fex` and `sources/shared-data`; old
+Tolkara workspaces remain on disk and are not adopted or deleted. Use a fresh
+`--work` for this version.
 
 Wine configuration is recorded in `wine-build/isotope-configure.json` and copied
 into runtime provenance. Reuse requires the same source path/revision/diff,
@@ -36,6 +39,18 @@ site scripts are excluded from configure. A changed input, missing/corrupt recei
 or incomplete build directory stops before compilation; use a fresh `--work`
 directory. Existing build products are preserved. Pre-receipt workspaces must also
 start fresh; Isotope never adopts their Makefile as proof of configuration.
+
+Builder recipes reject unknown fields, misspelled source/archive slots and wrong
+value types. Historical unused recipe settings have been removed. Persisted Wine,
+FEX companion, frontend and source-overlay receipts use typed Serde contracts;
+release validation uses explicit status enums and typed guest outcomes. Unsupported
+receipt schemas, missing required fields and malformed manifests fail before they
+can authorize assembly or packaging. Historical schema-less component receipts
+require rebuilding the affected components; they are never implicitly upgraded.
+JSON errors include the input filename.
+Nucleon's independently versioned inspection response accepts additional fields
+while still requiring its schema and runtime fields to have the expected types.
+
 `fex probe`, `fex probe-unixlib`, `fex check-reference` and the `dx12`/`frontend`
 commands retain the experimental probes and assembly workflows. Reference app
 components are local diagnostics, never inputs to the core release publisher.
@@ -133,3 +148,26 @@ full source build or remote release run was performed. See VALIDATION.json.
 The split verification above predates the 32-bit process fix. The current
 [WoW64 fix](WOW64-FIX.md) and [verification record](WOW64-VALIDATION.json) show both
 guests passing a strict local `--require-x86` validation run.
+
+## Upstream migration (2026-10-20)
+
+Wine is pinned to the official 11.20 release and FEX to FEX-2610. The builder no
+longer checks out either Tolkara fork. Three reviewed patches carry the Darwin
+TEB slot, guest address window, MAP_JIT pool and shared-page/Steam/graphics glue.
+Wine 11.20's existing syscall wrappers replace the older generated wrapper layer;
+FEX is selected through Wine's registry configuration rather than loader changes.
+The iPad hosting, aliased-JIT and application-specific fork changes are omitted.
+The separate graphics recipe no longer adds exit/message tracing patches.
+
+Both guest workloads pass with a fresh prefix, including 32-bit child process
+creation; the x64 shared-page/protection and self-modifying-code checks pass.
+Nucleon accepts the assembled Vulkan runtime. DiRT Rally 2.0 launched with DXVK
+and KosmicKrisp, with menu and input confirmed by the user. No CrossOver, GPTK or
+D3DMetal components were used. Core release contents still exclude graphics and
+Steam binaries; game validation used the separately assembled graphics runtime.
+A second fresh build through the Isotope CLI passed the real Nucleon managed
+archive import, integrity/native dependency audit, both guest tests and cleanup
+with `release validate --require-x86`. 32 Rust tests, strict Clippy and formatting
+pass; one archive-fixture test remains intentionally ignored. The DiRT-tested
+graphics runtime is retained locally in `target/upstream-game-runtime`.
+See [UPSTREAM-VALIDATION.json](UPSTREAM-VALIDATION.json) for the precise scope.

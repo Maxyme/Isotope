@@ -37,14 +37,25 @@ impl Runtime {
     pub fn inspect(root: &Path) -> Result<Self> {
         let value = output(executable(), &["wine".into(),"inspect".into(),p(root),"--json".into()], Some(&clean_environment()), None)
             .context("Consumer validation requires Nucleon with 'wine inspect --json'; pass --nucleon /path/to/nucleon")?;
-        let value: serde_json::Value = serde_json::from_str(&value)?;
-        ensure!(
-            value["schema"] == 1,
-            "Unsupported consumer inspection schema"
-        );
-        Ok(serde_json::from_value(value["runtime"].clone())?)
+        parse_inspection(&value)
     }
 }
+fn parse_inspection(value: &str) -> Result<Runtime> {
+    // The producer is independently versioned: accept additional response fields.
+    #[derive(Deserialize)]
+    struct Inspection {
+        schema: u32,
+        runtime: Runtime,
+    }
+    let inspection: Inspection =
+        serde_json::from_str(value).context("Invalid Nucleon inspection response")?;
+    ensure!(
+        inspection.schema == 1,
+        "Unsupported consumer inspection schema"
+    );
+    Ok(inspection.runtime)
+}
+
 pub fn install_archive(archive: &Path, support: &Path) -> Result<Runtime> {
     fs::create_dir_all(support)?;
     let mut env = clean_environment();
@@ -94,4 +105,29 @@ pub fn install_archive(archive: &Path, support: &Path) -> Result<Runtime> {
         Duration::from_millis(300),
     )?;
     Runtime::inspect(root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn inspection_accepts_extensions_but_rejects_wrong_shapes_and_schemas() {
+        let valid = serde_json::json!({"schema":1,"future_envelope_field":true,"runtime":{
+            "root":"/runtime","loader":"/runtime/wine","server":"/runtime/wineserver","unix_dir":"/runtime/unix",
+            "windows_dirs":["/runtime/windows"],"environment":{},"graphics":{"future_backend":{}},"future_runtime_field":[]
+        }});
+        assert_eq!(
+            parse_inspection(&valid.to_string()).unwrap().root,
+            PathBuf::from("/runtime")
+        );
+        let mut bad = valid.clone();
+        bad["schema"] = 2.into();
+        assert!(parse_inspection(&bad.to_string()).is_err());
+        let mut bad = valid.clone();
+        bad["runtime"]["windows_dirs"] = false.into();
+        assert!(parse_inspection(&bad.to_string()).is_err());
+        let mut bad = valid;
+        bad["runtime"].as_object_mut().unwrap().remove("loader");
+        assert!(parse_inspection(&bad.to_string()).is_err());
+    }
 }

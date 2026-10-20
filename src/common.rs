@@ -1,11 +1,12 @@
+use crate::receipts::OverlayReceipt;
 use crate::{
     artifacts,
     atomic::atomic_write_file,
     process::{OwnedChild, TERMINATION_GRACE},
 };
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -24,11 +25,15 @@ pub use crate::artifacts::{copy_file as copy, copy_tree, digest as sha};
 pub fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
-pub fn json(path: &Path) -> Result<Value> {
-    Ok(serde_json::from_slice(
-        &fs::read(path).with_context(|| format!("Read {}", path.display()))?,
-    )?)
+pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let bytes = fs::read(path).with_context(|| format!("Read {}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .with_context(|| format!("Invalid JSON contract in {}", path.display()))
 }
+pub fn json(path: &Path) -> Result<Value> {
+    read_json(path)
+}
+
 pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     fs::create_dir_all(path.parent().context("JSON destination has no parent")?)?;
     let mut bytes = serde_json::to_vec_pretty(value)?;
@@ -257,6 +262,7 @@ pub fn require_native() -> Result<()> {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Pin {
     pub url: String,
     pub revision: String,
@@ -294,12 +300,12 @@ pub fn checkout(path: &Path, pin: &Pin) -> Result<()> {
         "Unexpected Git remote"
     );
     if !git(path, &["status", "--porcelain"])?.is_empty() {
-        let marker = json(&path.join(".nucleon-overlay.json"))?;
+        let marker: OverlayReceipt = read_json(&path.join(".nucleon-overlay.json"))?;
         let untracked = git(path, &["ls-files", "--others", "--exclude-standard"])?;
         ensure!(
             untracked.lines().all(|s| s == ".nucleon-overlay.json")
                 && git(path, &["rev-parse", "HEAD"])? == pin.revision
-                && marker["diff_sha256"] == source_diff(path)?,
+                && marker.diff_sha256 == source_diff(path)?,
             "Preserve modified source checkout {}",
             path.display()
         );
@@ -313,33 +319,45 @@ pub fn checkout(path: &Path, pin: &Pin) -> Result<()> {
 }
 pub fn patches(source: &Path, names: &[String]) -> Result<()> {
     for name in names {
-        let args = vec![
-            "--batch".into(),
-            "-p1".into(),
-            "--input".into(),
-            p(repo().join(name)),
-        ];
-        let mut check = args.clone();
-        check.extend(["--dry-run".into(), "--forward".into()]);
-        let applicable = run("patch", &check, None, Some(source), None, 60, 0).is_ok();
-        let mut apply = args;
-        apply.extend(if applicable {
-            vec!["--forward".into()]
+        let patch = p(repo().join(name));
+        if git(source, &["apply", "--check", &patch]).is_ok() {
+            // Include newly created headers in source hashes and corresponding-sources archives.
+            git(source, &["apply", "--intent-to-add", &patch])?;
         } else {
-            vec!["--dry-run".into(), "--reverse".into()]
-        });
-        run("patch", &apply, None, Some(source), None, 60, 0)?;
+            // Source export adds modification notices; allow context-only fuzz when
+            // verifying that the original patch is already present, without rewriting it.
+            run(
+                "patch",
+                &[
+                    "--batch".into(),
+                    "-p1".into(),
+                    "--input".into(),
+                    patch,
+                    "--dry-run".into(),
+                    "--reverse".into(),
+                ],
+                None,
+                Some(source),
+                None,
+                60,
+                0,
+            )?;
+        }
     }
     if !names.is_empty() {
         write_json(
             &source.join(".nucleon-overlay.json"),
-            &json!({"diff_sha256":source_diff(source)?,"patches":hash_files(&repo(),names)?}),
+            &OverlayReceipt {
+                diff_sha256: source_diff(source)?,
+                patches: hash_files(&repo(), names)?,
+            },
         )?;
     }
     Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArchivePin {
     pub url: String,
     pub archive: String,
@@ -409,6 +427,59 @@ impl Drop for FileLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn patch_created_files_are_exportable_and_reapplication_preserves_bytes() {
+        let source = tempfile::tempdir().unwrap();
+        git(source.path(), &["init", "-q"]).unwrap();
+        git(
+            source.path(),
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "fixture",
+            ],
+        )
+        .unwrap();
+        let patch = tempfile::NamedTempFile::new().unwrap();
+        fs::write(patch.path(), "diff --git a/new.h b/new.h\nnew file mode 100644\n--- /dev/null\n+++ b/new.h\n@@ -0,0 +1 @@\n+#define NEW_HEADER 1\n").unwrap();
+        let names = vec![p(patch.path())];
+        patches(source.path(), &names).unwrap();
+        let first = source_diff(source.path()).unwrap();
+        assert!(git(source.path(), &["ls-files"]).unwrap().contains("new.h"));
+        assert!(
+            crate::release::source_files(source.path())
+                .unwrap()
+                .contains(Path::new("new.h"))
+        );
+        patches(source.path(), &names).unwrap();
+        assert_eq!(source_diff(source.path()).unwrap(), first);
+        crate::release::mark_changes(source.path(), &["new.h".into()], "0.1.0-rc.1", "2026-10-20")
+            .unwrap();
+        let marked = source_diff(source.path()).unwrap();
+        patches(source.path(), &names).unwrap();
+        assert_eq!(source_diff(source.path()).unwrap(), marked);
+        fs::write(source.path().join("new.h"), "changed\n").unwrap();
+        assert_ne!(source_diff(source.path()).unwrap(), first);
+    }
+    #[test]
+    fn malformed_typed_json_reports_its_file_and_deserialization_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("build.json");
+        fs::write(&path, r#"{"diff_sha256":"hash","patches":42}"#).unwrap();
+        let error = read_json::<OverlayReceipt>(&path).unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(&p(&path)));
+        assert!(message.contains("invalid type"));
+    }
     #[test]
     fn runtime_and_graphics_overrides_do_not_leak_into_developer_children() {
         let env = clean_environment_from(
@@ -509,7 +580,10 @@ mod tests {
         assert!(checkout(root, &pin).is_err());
         write_json(
             &root.join(".nucleon-overlay.json"),
-            &json!({"diff_sha256":source_diff(root).unwrap()}),
+            &OverlayReceipt {
+                diff_sha256: source_diff(root).unwrap(),
+                patches: Default::default(),
+            },
         )
         .unwrap();
         checkout(root, &pin).unwrap();

@@ -1,3 +1,5 @@
+use crate::common::read_json;
+use crate::receipts::{OverlayReceipt, WineBuildReceipt};
 use crate::{
     build::{Build, finish_probe, marker_run},
     common::{
@@ -16,17 +18,37 @@ use std::{
 
 pub const RECIPE: &str = "assets/wine/recipes/arm64-fex-dx12.toml";
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GraphicsRecipe {
     pub schema: u32,
     pub steamac: Pin,
     pub mesa: Pin,
     pub python: BTreeMap<String, String>,
     pub wine: ExtraPatches,
-    pub archives: BTreeMap<String, ArchivePin>,
+    pub archives: Archives,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExtraPatches {
     pub patches: Vec<String>,
+}
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Archives {
+    vkd3d: ArchivePin,
+    dxvk: ArchivePin,
+}
+impl Archives {
+    fn values(&self) -> [&ArchivePin; 2] {
+        [&self.vkd3d, &self.dxvk]
+    }
+    fn get(&self, name: &str) -> Result<&ArchivePin> {
+        match name {
+            "vkd3d" => Ok(&self.vkd3d),
+            "dxvk" => Ok(&self.dxvk),
+            _ => anyhow::bail!("Unknown graphics archive {name}"),
+        }
+    }
 }
 pub struct Graphics {
     pub base: Build,
@@ -113,7 +135,7 @@ impl Graphics {
                 &[
                     "checkout",
                     "--detach",
-                    &self.base.recipe.alternatives["tolkara"]["wine"].revision,
+                    &self.base.recipe.sources.wine.revision,
                 ],
             )?;
         }
@@ -146,7 +168,7 @@ impl Graphics {
         build.build_wine(&self.pin.wine.patches, Some(&self.sdk))?;
         let runtime = self.work.join("runtime");
         let path = runtime.join("build.json");
-        let mut receipt = json(&path)?;
+        let mut receipt: WineBuildReceipt = read_json(&path)?;
         let names = [
             "lib/wine/aarch64-windows/ntdll.dll",
             "lib/wine/aarch64-windows/winevulkan.dll",
@@ -156,10 +178,10 @@ impl Graphics {
             "lib/wine/aarch64-unix/win32u.so",
         ]
         .map(str::to_owned);
-        receipt["graphics_boundary_files"] = serde_json::to_value(hash_files(&runtime, &names)?)?;
-        receipt["dx12_recipe_sha256"] = sha(&repo().join(RECIPE))?.into();
-        receipt["vulkan_sdk"] = p(&self.sdk).into();
-        receipt["vulkan_loader_sha256"] = sha(&self.sdk.join("lib/libvulkan.1.dylib"))?.into();
+        receipt.graphics_boundary_files = Some(hash_files(&runtime, &names)?);
+        receipt.dx12_recipe_sha256 = Some(sha(&repo().join(RECIPE))?);
+        receipt.vulkan_sdk = Some(p(&self.sdk));
+        receipt.vulkan_loader_sha256 = Some(sha(&self.sdk.join("lib/libvulkan.1.dylib"))?);
         copy(
             &repo().join(RECIPE),
             &runtime.join("share/nucleon-build/arm64-fex-dx12.toml"),
@@ -187,10 +209,9 @@ impl Graphics {
             .map(|path| Ok((p(path.file_name().unwrap()), sha(path)?)))
             .collect::<Result<_>>()?;
         if marker.exists() {
-            let old = json(&marker)?;
+            let old: OverlayReceipt = read_json(&marker)?;
             ensure!(
-                old["diff_sha256"] == source_diff(&source)?
-                    && old["patches"] == serde_json::to_value(hashes)?,
+                old.diff_sha256 == source_diff(&source)? && old.patches == hashes,
                 "Preserve modified Mesa checkout"
             );
             return Ok(());
@@ -218,7 +239,10 @@ impl Graphics {
         }
         write_json(
             &marker,
-            &json!({"diff_sha256":source_diff(&source)?,"patches":hashes}),
+            &OverlayReceipt {
+                diff_sha256: source_diff(&source)?,
+                patches: hashes,
+            },
         )
     }
     pub fn build_driver(&self) -> Result<()> {
@@ -406,7 +430,7 @@ impl Graphics {
             ("vkd3d", vec!["x64/d3d12.dll", "x64/d3d12core.dll"]),
             ("dxvk", vec!["x64/dxgi.dll"]),
         ] {
-            let pin = &self.pin.archives[name];
+            let pin = self.pin.archives.get(name)?;
             let archive = self.work.join("archives").join(&pin.archive);
             ensure!(
                 sha(&archive)? == pin.sha256,
@@ -485,8 +509,8 @@ impl Graphics {
             source = self.base.work.join("runtime");
         }
         let unix = self.base.build_unixlib()?;
-        let receipt = json(&source.join("build.json"))?;
-        verify_hashes(&source, &receipt["host_files"])?;
+        let receipt: WineBuildReceipt = read_json(&source.join("build.json"))?;
+        verify_manifest(&source, &receipt.host_files)?;
         let dxmt = self.base.work.join("dxmt");
         let dxmt_files = crate::release::files(&dxmt)?;
         ensure!(
@@ -851,15 +875,20 @@ impl Graphics {
         )
     }
 }
-pub fn verify_hashes(root: &Path, files: &Value) -> Result<()> {
-    for (name, digest) in files.as_object().context("Missing file hashes")? {
+pub fn verify_manifest(root: &Path, files: &crate::receipts::FileManifest) -> Result<()> {
+    for (name, digest) in files {
         ensure!(
-            sha(&root.join(name))? == digest.as_str().context("Invalid file digest")?,
+            sha(&root.join(name))? == *digest,
             "Modified component: {name}"
         );
     }
     Ok(())
 }
+pub fn verify_hashes(root: &Path, files: &Value) -> Result<()> {
+    let files = serde_json::from_value(files.clone()).context("Invalid file manifest")?;
+    verify_manifest(root, &files)
+}
+
 impl Graphics {
     fn compile_native(&self, source: &Path, target: &Path) -> Result<()> {
         run(
@@ -1059,4 +1088,24 @@ pub fn shader_compiler() -> Result<PathBuf> {
         "Set NUCLEON_PROBE_D3DCOMPILER to a licensed x64 d3dcompiler_47.dll"
     );
     Ok(path)
+}
+
+#[cfg(test)]
+mod recipe_tests {
+    use super::*;
+    #[test]
+    fn graphics_recipe_rejects_unused_fields_and_archive_typos() {
+        let original = include_str!("../assets/wine/recipes/arm64-fex-dx12.toml");
+        assert!(toml::from_str::<GraphicsRecipe>(original).is_ok());
+        for bad in [
+            format!("unused = true\n{original}"),
+            original.replace("[archives.dxvk]", "[archives.dxvkk]"),
+            original.replace("unix_patches", "unix_patch"),
+            original.replace("patches =", "patch ="),
+        ] {
+            if bad != original {
+                assert!(toml::from_str::<GraphicsRecipe>(&bad).is_err());
+            }
+        }
+    }
 }

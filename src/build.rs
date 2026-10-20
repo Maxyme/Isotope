@@ -1,10 +1,11 @@
-//! Supported Tolkara Wine/FEX build route. All products stay in the developer workspace.
+//! Pinned Wine/FEX build route. All products stay in the developer workspace.
+use crate::common::read_json;
 use crate::common::{
     ArchivePin, Environment, Pin, build_environment, checkout, copy, fetch_archive, git,
-    hash_files, json, output, p, patches, repo, require_native, run, set, sha, source_diff,
-    write_json,
+    hash_files, output, p, patches, repo, require_native, run, set, sha, source_diff, write_json,
 };
 use crate::configure::{ConfigureInputs, SdkIdentity, ToolIdentity, configure_once};
+use crate::receipts::{BuildStatus, Schema2, UnixBuildInputs, UnixBuildReceipt, WineBuildReceipt};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,24 +17,33 @@ use std::{
 
 pub const RECIPE: &str = "assets/wine/recipes/arm64-fex.toml";
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WineSettings {
     pub patches: Vec<String>,
     pub shared_data_helper: String,
     pub shared_data_helper_sha256: String,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WineRecipe {
     pub configure: Vec<String>,
-    pub tolkara: WineSettings,
+    pub runtime: WineSettings,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Recipe {
     pub schema: u32,
-    pub sources: BTreeMap<String, Pin>,
-    pub alternatives: BTreeMap<String, BTreeMap<String, Pin>>,
+    pub sources: Sources,
     pub toolchain: ArchivePin,
     pub reference: ArchivePin,
     pub wine: WineRecipe,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Sources {
+    pub wine: Pin,
+    pub fex: Pin,
+    pub shared_data: Pin,
 }
 pub struct Build {
     pub workspace: PathBuf,
@@ -60,13 +70,13 @@ impl Build {
                 .as_ref()
                 .context("Missing toolchain directory")?,
         );
-        let work = workspace.join("tolkara");
+        let work = workspace.join("core");
         let logs = work.join("logs");
         fs::create_dir_all(&logs)?;
         let sources = workspace.join("sources");
         Ok(Self {
-            wine: sources.join("tolkara-wine"),
-            fex: sources.join("tolkara-fex"),
+            wine: sources.join("wine"),
+            fex: sources.join("fex"),
             sources,
             env: build_environment(&compiler),
             compiler,
@@ -78,13 +88,16 @@ impl Build {
         })
     }
     pub fn source_pins(&self) -> BTreeMap<String, Pin> {
-        let mut pins: BTreeMap<_, _> = self.recipe.alternatives["tolkara"]
-            .iter()
-            .map(|(k, v)| (format!("tolkara-{k}"), v.clone()))
-            .collect();
-        pins.insert("wine".into(), self.recipe.sources["wine"].clone());
-        pins
+        BTreeMap::from([
+            ("wine".into(), self.recipe.sources.wine.clone()),
+            ("fex".into(), self.recipe.sources.fex.clone()),
+            (
+                "shared-data".into(),
+                self.recipe.sources.shared_data.clone(),
+            ),
+        ])
     }
+
     pub fn fetch(&self, reference: bool) -> Result<()> {
         for (name, pin) in self.source_pins() {
             checkout(&self.sources.join(name), &pin)?;
@@ -174,6 +187,7 @@ impl Build {
     }
     pub fn build_fex(&self) -> Result<()> {
         self.verify_sources()?;
+        patches(&self.fex, &self.recipe.sources.fex.unix_patches)?;
         for (triple, target, dir) in [
             ("arm64ec", "arm64ecfex", "arm64ec"),
             ("aarch64", "wow64fex", "wow64"),
@@ -225,7 +239,7 @@ impl Build {
         Ok(())
     }
     pub fn build_unixlib(&self) -> Result<PathBuf> {
-        let pin = &self.recipe.alternatives["tolkara"]["fex"];
+        let pin = &self.recipe.sources.fex;
         ensure!(
             git(&self.fex, &["rev-parse", "HEAD"])? == pin.revision,
             "Unexpected FEX revision"
@@ -234,14 +248,20 @@ impl Build {
         let source = self.fex.join("Source/Windows/UnixLib");
         let build = self.work.join("fex/unixlib");
         fs::create_dir_all(&build)?;
-        let inputs = json!({"revision":pin.revision,"source":sha(&source.join("FEXUnixLib.cpp"))?,"header":sha(&source.join("FEXUnixLib.h"))?,"compiler":output("/usr/bin/clang++",&["--version".into()],None,None)?,"patches":hash_files(&repo(),&pin.unix_patches)?});
+        let inputs = UnixBuildInputs {
+            revision: pin.revision.clone(),
+            source: sha(&source.join("FEXUnixLib.cpp"))?,
+            header: sha(&source.join("FEXUnixLib.h"))?,
+            compiler: output("/usr/bin/clang++", &["--version".into()], None, None)?,
+            patches: hash_files(&repo(), &pin.unix_patches)?,
+        };
         let names = ["libarm64ecfex.so", "libwow64fex.so"].map(str::to_owned);
         let receipt = build.join("build.json");
-        if let Ok(previous) = json(&receipt)
-            && previous["inputs"] == inputs
+        if let Ok(previous) = read_json::<UnixBuildReceipt>(&receipt)
+            && previous.inputs == inputs
             && names
                 .iter()
-                .all(|n| sha(&build.join(n)).is_ok_and(|s| previous["files"][n] == s))
+                .all(|n| sha(&build.join(n)).is_ok_and(|s| previous.files.get(n) == Some(&s)))
         {
             return Ok(build);
         }
@@ -280,14 +300,21 @@ impl Build {
         }
         write_json(
             &receipt,
-            &json!({"schema":2,"inputs":inputs,"files":hash_files(&build,&names)?}),
+            &UnixBuildReceipt {
+                schema: Schema2,
+                inputs,
+                files: hash_files(&build, &names)?,
+            },
         )?;
         Ok(build)
     }
     pub fn prepare_wine(&self, extra: &[String]) -> Result<Vec<String>> {
         self.verify_sources()?;
-        let settings = &self.recipe.wine.tolkara;
-        let helper = self.sources.join("wine").join(&settings.shared_data_helper);
+        let settings = &self.recipe.wine.runtime;
+        let helper = self
+            .sources
+            .join("shared-data")
+            .join(&settings.shared_data_helper);
         ensure!(
             sha(&helper)? == settings.shared_data_helper_sha256,
             "Pinned shared-data helper checksum mismatch"
@@ -491,7 +518,7 @@ impl Build {
                 )?;
             }
         }
-        let helper = &self.recipe.wine.tolkara.shared_data_helper;
+        let helper = &self.recipe.wine.runtime.shared_data_helper;
         copy(
             &self.wine.join(helper),
             &provenance.join(Path::new(helper).file_name().unwrap()),
@@ -530,7 +557,26 @@ impl Build {
         .map(str::to_owned);
         write_json(
             &runtime.join("build.json"),
-            &json!({"schema":2,"status":"BUILT_NOT_EXECUTION_VALIDATED","variant":"tolkara","recipe_sha256":sha(&repo().join(RECIPE))?,"sources":self.source_pins(),"patches":hash_files(&repo(),names)?,"toolchain_sha256":self.recipe.toolchain.sha256,"sdk":output("xcrun",&["--show-sdk-version".into()],None,None)?,"native_compiler":output("/usr/bin/clang",&["--version".into()],None,None)?.lines().next(),"host_files":hash_files(&runtime,&host_files)?,"features":"SOURCE_BUILT_WINE_SEPARATE_CPU_AND_GRAPHICS_TEST_RECEIPTS"}),
+            &WineBuildReceipt {
+                schema: Schema2,
+                status: BuildStatus::BuiltNotExecutionValidated,
+                variant: "isotope".into(),
+                recipe_sha256: sha(&repo().join(RECIPE))?,
+                sources: self.source_pins(),
+                patches: hash_files(&repo(), names)?,
+                toolchain_sha256: self.recipe.toolchain.sha256.clone(),
+                sdk: output("xcrun", &["--show-sdk-version".into()], None, None)?,
+                native_compiler: output("/usr/bin/clang", &["--version".into()], None, None)?
+                    .lines()
+                    .next()
+                    .map(str::to_owned),
+                host_files: hash_files(&runtime, &host_files)?,
+                features: "SOURCE_BUILT_WINE_SEPARATE_CPU_AND_GRAPHICS_TEST_RECEIPTS".into(),
+                graphics_boundary_files: None,
+                dx12_recipe_sha256: None,
+                vulkan_sdk: None,
+                vulkan_loader_sha256: None,
+            },
         )
     }
     pub fn runtime_environment(&self, prefix: &str) -> Result<(PathBuf, Environment)> {
@@ -694,7 +740,7 @@ impl Build {
             "cpu-build.log",
         )?;
         let (loader, env) = self.runtime_environment("cpu-smoke")?;
-        let mut report = json!({"schema":2,"host":host,"workload_sha256":sha(&exe)?,"status":"NOT_EXECUTED","variant":"tolkara","steam_launched":false});
+        let mut report = json!({"schema":2,"host":host,"workload_sha256":sha(&exe)?,"status":"NOT_EXECUTED","variant":"isotope","steam_launched":false});
         let result = (|| {
             marker_run(
                 &loader,
@@ -870,6 +916,22 @@ pub fn finish_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::json;
+    #[test]
+    fn core_recipe_rejects_unknown_missing_and_mistyped_settings() {
+        let original = include_str!("../assets/wine/recipes/arm64-fex.toml");
+        assert!(toml::from_str::<Recipe>(original).is_ok());
+        for bad in [
+            format!("unused = true\n{original}"),
+            original.replace("configure =", "configrue ="),
+            original.replace("[sources.wine]", "[sources.wien]"),
+            original.replace("[sources.fex]", "[sources.fxe]"),
+            original.replace("schema = 1", "schema = 'one'"),
+            original.replace("unix_patches =", "unix_patch ="),
+        ] {
+            assert!(toml::from_str::<Recipe>(&bad).is_err());
+        }
+    }
     #[test]
     fn configure_environment_excludes_secrets_and_disables_site_scripts() {
         let env = [

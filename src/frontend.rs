@@ -1,10 +1,12 @@
+use crate::common::read_json;
+use crate::receipts::{BuildStatus, FrontendBuildReceipt, OverlayReceipt, Schema2};
 use crate::{
     build::{finish_probe, marker_run},
     common::{
         Pin, checkout, copy, copy_tree, git, hash_files, json, key, output, p, patches, repo, run,
         set, sha, source_diff, write_json,
     },
-    graphics::{Graphics, shader_compiler, verify_hashes},
+    graphics::{Graphics, shader_compiler, verify_hashes, verify_manifest},
 };
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
@@ -18,20 +20,48 @@ use std::{
 const RECIPE: &str = "assets/wine/recipes/arm64ec-graphics.toml";
 const SHARED: &str = "share/nucleon/arm64ec";
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Recipe {
     schema: u32,
-    sources: BTreeMap<String, Pin>,
+    sources: Sources,
     darwin: Darwin,
     dxmt: Dxmt,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Darwin {
     teb_tsd_offset: String,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Dxmt {
     native_llvm_version: String,
     patches: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Sources {
+    mingw: Pin,
+    dxvk: Pin,
+    vkd3d: Pin,
+    dxmt: Pin,
+}
+impl Sources {
+    fn iter(&self) -> [(&str, &Pin); 4] {
+        [
+            ("mingw", &self.mingw),
+            ("dxvk", &self.dxvk),
+            ("vkd3d", &self.vkd3d),
+            ("dxmt", &self.dxmt),
+        ]
+    }
+    fn get(&self, name: &str) -> Result<&Pin> {
+        self.iter()
+            .into_iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value)
+            .context("Unknown frontend source")
+    }
 }
 pub struct Frontend {
     pub graphics: Graphics,
@@ -170,7 +200,7 @@ impl Frontend {
         self.work.join("sources").join(name)
     }
     pub fn fetch(&self) -> Result<()> {
-        for (name, pin) in &self.pin.sources {
+        for (name, pin) in self.pin.sources.iter() {
             checkout(&self.source(name), pin)?;
             git(
                 &self.source(name),
@@ -189,16 +219,15 @@ impl Frontend {
     fn verify_source(&self, name: &str) -> Result<String> {
         let source = self.source(name);
         ensure!(
-            git(&source, &["rev-parse", "HEAD"])? == self.pin.sources[name].revision,
+            git(&source, &["rev-parse", "HEAD"])? == self.pin.sources.get(name)?.revision,
             "Frontend source revision mismatch: {name}"
         );
         if !git(&source, &["status", "--porcelain", "--untracked-files=no"])?.is_empty() {
-            let marker = json(&source.join(".nucleon-overlay.json"))?;
+            let marker: OverlayReceipt = read_json(&source.join(".nucleon-overlay.json"))?;
             ensure!(
                 name == "dxmt"
-                    && marker["diff_sha256"] == source_diff(&source)?
-                    && marker["patches"]
-                        == serde_json::to_value(hash_files(&repo(), &self.pin.dxmt.patches)?)?,
+                    && marker.diff_sha256 == source_diff(&source)?
+                    && marker.patches == hash_files(&repo(), &self.pin.dxmt.patches)?,
                 "Modified frontend source: {name}"
             );
         }
@@ -334,7 +363,8 @@ impl Frontend {
             "-Dbuildtype=release".into(),
             "--wrap-mode=nodownload".into(),
         ];
-        let mut provenance = json!({});
+        let (mut crt_sha256, mut emutls_sha256, mut teb_header_sha256, mut mingw_source) =
+            (None, None, None, None);
         if architecture == "arm64ec" {
             let startup = self.darwin_startup()?;
             let flags = quote_args(&self.teb_flags())?;
@@ -348,7 +378,10 @@ impl Frontend {
                 format!("-Dc_link_args={link}"),
                 format!("-Dcpp_link_args={link}"),
             ]);
-            provenance = json!({"crt_sha256":sha(&startup.join("dllcrt2.o"))?,"emutls_sha256":sha(&startup.join("emutls.o"))?,"teb_header_sha256":sha(&repo().join("tools/runtime-probes/darwin-teb.h"))?,"mingw_source":self.pin.sources["mingw"]});
+            crt_sha256 = Some(sha(&startup.join("dllcrt2.o"))?);
+            emutls_sha256 = Some(sha(&startup.join("emutls.o"))?);
+            teb_header_sha256 = Some(sha(&repo().join("tools/runtime-probes/darwin-teb.h"))?);
+            mingw_source = Some(self.pin.sources.mingw.clone());
         }
         options.extend(match name {
             "dxvk" => vec![
@@ -370,14 +403,30 @@ impl Frontend {
                 format!("-Dnative_llvm_path={}", self.native_llvm.display()),
             ],
         });
-        let mut receipt = json!({"schema":2,"status":"BUILDING","architecture":architecture,"source":self.pin.sources[name],"submodules":modules,"recipe_sha256":sha(&repo().join(RECIPE))?,"cross_sha256":sha(&cross)?,"toolchain":self.graphics.base.recipe.toolchain,"log":log,"options":options,"prerequisites":prerequisites});
-        receipt
-            .as_object_mut()
-            .unwrap()
-            .extend(provenance.as_object().unwrap().clone());
-        if name == "dxmt" {
-            receipt["overlay"] = json(&self.source(name).join(".nucleon-overlay.json"))?;
-        }
+        let mut receipt = FrontendBuildReceipt {
+            schema: Schema2,
+            status: BuildStatus::Building,
+            architecture: architecture.into(),
+            source: self.pin.sources.get(name)?.clone(),
+            submodules: modules,
+            recipe_sha256: sha(&repo().join(RECIPE))?,
+            cross_sha256: sha(&cross)?,
+            toolchain: self.graphics.base.recipe.toolchain.clone(),
+            log: log.clone(),
+            options: options.clone(),
+            prerequisites,
+            crt_sha256,
+            emutls_sha256,
+            teb_header_sha256,
+            mingw_source,
+            overlay: if name == "dxmt" {
+                Some(read_json(&self.source(name).join(".nucleon-overlay.json"))?)
+            } else {
+                None
+            },
+            files: None,
+            error: None,
+        };
         let report = self.work.join(format!("build-{name}-{architecture}.json"));
         write_json(&report, &receipt)?;
         let result = (|| {
@@ -452,11 +501,11 @@ impl Frontend {
                 }
                 copy(&source, &temp.path().join(name))?;
             }
-            receipt["status"] = "BUILT_NOT_EXECUTION_VALIDATED".into();
-            receipt["files"] = serde_json::to_value(hash_files(
+            receipt.status = BuildStatus::BuiltNotExecutionValidated;
+            receipt.files = Some(hash_files(
                 temp.path(),
                 &names.iter().map(|s| (*s).into()).collect::<Vec<_>>(),
-            )?)?;
+            )?);
             write_json(&temp.path().join("build.json"), &receipt)?;
             if stage.exists() {
                 fs::rename(
@@ -471,8 +520,8 @@ impl Frontend {
             Ok(())
         })();
         if let Err(error) = &result {
-            receipt["status"] = "BUILD_FAILED".into();
-            receipt["error"] = format!("{error:#}").into();
+            receipt.status = BuildStatus::BuildFailed;
+            receipt.error = Some(format!("{error:#}"));
         }
         write_json(&report, &receipt)?;
         result
@@ -490,13 +539,19 @@ impl Frontend {
             ("vkd3d", vec!["d3d12.dll", "d3d12core.dll"]),
         ] {
             let bundle = self.work.join("bundles/arm64ec").join(component);
-            let report = json(&bundle.join("build.json"))?;
+            let report: FrontendBuildReceipt = read_json(&bundle.join("build.json"))?;
             ensure!(
-                report["architecture"] == "arm64ec"
-                    && report["status"] == "BUILT_NOT_EXECUTION_VALIDATED",
+                report.architecture == "arm64ec"
+                    && report.status == BuildStatus::BuiltNotExecutionValidated,
                 "Incomplete ARM64EC frontend build"
             );
-            verify_hashes(&bundle, &report["files"])?;
+            verify_manifest(
+                &bundle,
+                report
+                    .files
+                    .as_ref()
+                    .context("Built frontend receipt has no files")?,
+            )?;
             for name in names {
                 copies.insert(
                     Path::new(SHARED).join(component).join(name),
@@ -508,15 +563,26 @@ impl Frontend {
                 bundle.join("build.json"),
             );
             for (name, field, source) in [
-                ("dllcrt2.o", "crt_sha256", self.work.join("crt/dllcrt2.o")),
-                ("emutls.o", "emutls_sha256", self.work.join("crt/emutls.o")),
+                (
+                    "dllcrt2.o",
+                    report.crt_sha256.as_deref(),
+                    self.work.join("crt/dllcrt2.o"),
+                ),
+                (
+                    "emutls.o",
+                    report.emutls_sha256.as_deref(),
+                    self.work.join("crt/emutls.o"),
+                ),
                 (
                     "darwin-teb.h",
-                    "teb_header_sha256",
+                    report.teb_header_sha256.as_deref(),
                     repo().join("tools/runtime-probes/darwin-teb.h"),
                 ),
             ] {
-                ensure!(report[field] == sha(&source)?, "ARM64EC CRT/TLS mismatch");
+                ensure!(
+                    field == Some(sha(&source)?.as_str()),
+                    "ARM64EC CRT/TLS mismatch"
+                );
                 copies.insert(Path::new(SHARED).join("crt").join(name), source);
             }
             builds.insert(component, report);
@@ -687,13 +753,19 @@ impl Frontend {
                 .join("drive_c/windows/system32");
             for name in names {
                 let bundle = self.work.join("bundles").join(architecture).join(name);
-                let input = json(&bundle.join("build.json"))?;
+                let input: FrontendBuildReceipt = read_json(&bundle.join("build.json"))?;
                 ensure!(
-                    input["architecture"] == architecture
-                        && input["status"] == "BUILT_NOT_EXECUTION_VALIDATED",
+                    input.architecture == architecture
+                        && input.status == BuildStatus::BuiltNotExecutionValidated,
                     "Wrong/incomplete frontend build"
                 );
-                verify_hashes(&bundle, &input["files"])?;
+                verify_manifest(
+                    &bundle,
+                    input
+                        .files
+                        .as_ref()
+                        .context("Built frontend receipt has no files")?,
+                )?;
                 for entry in fs::read_dir(&bundle)? {
                     let path = entry?.path();
                     if path.extension().is_some_and(|s| s == "dll") {
@@ -709,7 +781,7 @@ impl Frontend {
                         );
                     }
                 }
-                receipt["bundles"][name] = input;
+                receipt["bundles"][name] = serde_json::to_value(input)?;
                 if api == "dx11" {
                     copy(&bundle.join("winemetal.so"), &system.join("winemetal.so"))?;
                 }
@@ -908,6 +980,18 @@ pub fn windows_path(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn frontend_recipe_rejects_unknown_nested_settings() {
+        let original = include_str!("../assets/wine/recipes/arm64ec-graphics.toml");
+        assert!(toml::from_str::<Recipe>(original).is_ok());
+        for bad in [
+            original.replace("teb_tsd_offset", "teb_offset"),
+            original.replace("[sources.dxmt]", "[sources.dxtm]"),
+            format!("ignored = true\n{original}"),
+        ] {
+            assert!(toml::from_str::<Recipe>(&bad).is_err());
+        }
+    }
     #[test]
     fn cross_files_and_shell_arguments_keep_paths_as_data() {
         let dir = tempfile::tempdir().unwrap();

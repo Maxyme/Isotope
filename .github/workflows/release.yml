@@ -89,8 +89,8 @@ jobs:
         with:
           name: arm64-fex-runtime-failure-logs
           path: |
-            target/runtime-release/tolkara/logs/
-            target/runtime-release/tolkara/release-validation/
+            target/runtime-release/core/logs/
+            target/runtime-release/core/release-validation/
           if-no-files-found: warn
           retention-days: 14
 
