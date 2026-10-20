@@ -32,7 +32,7 @@ configure = [
     "--disable-tests", "--without-x", "--without-alsa", "--without-capi",
     "--without-oss", "--without-pulse", "--with-coreaudio",
     "--without-gstreamer", "--without-gnutls", "--without-sdl", "--without-usb",
-    "--without-vulkan", "--without-fontconfig", "--without-freetype",
+    "--without-vulkan", "--without-fontconfig", "--with-freetype",
     "--without-ffmpeg", "--without-cups", "--without-pcap",
 ]
 
@@ -43,3 +43,9 @@ patches = [
 ]
 shared_data_helper = "dlls/ntdll/unix/macrunner_fex_kusd.h"
 shared_data_helper_sha256 = "8e7d75d18572a01b37bfdbe6322e375f07d7920a460b76176f07cd4cdcca36a1"
+
+[freetype]
+url = "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz"
+archive = "freetype-2.14.3.tar.gz"
+directory = "freetype-2.14.3"
+sha256 = "e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1"

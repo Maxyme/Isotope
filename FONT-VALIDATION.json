@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "runtime": "/Users/maximejacques/code/isotope/target/font-validation/game-runtime",
+  "files": {
+    "bin/wine": "06be11e528ab506c0e5662e277a4f1d4f471ede641edd251985c1c61c6676625",
+    "lib/wine/aarch64-unix/win32u.so": "52ae9a73a647f46959aa5584034d87389fae1c363224454137ccece3f09aa693",
+    "lib/wine/aarch64-unix/libfreetype.6.dylib": "2a8d98c17be5f793ebec767bbe829ad46cc6beda233f4a18f0760ff6973221e8",
+    "share/wine/fonts/tahoma.ttf": "90f1abad4da0ce03da5d2277ee75a9600ce812d37c90eab76e0838ffa7937e55",
+    "lib/vulkan/libvulkan_kosmickrisp.dylib": "82e46b5501d2df08612bccf3f59b1bee76d714e3e3b355896670a46119b94dea"
+  },
+  "isotope_unit_tests": {
+    "passed": 33,
+    "ignored": 1,
+    "failed": 0
+  },
+  "strict_clippy": "PASSED",
+  "nucleon_core_runner_tests": "PASSED; optional fixture tests ignored",
+  "old_runtime_negative_control": {
+    "exit_code": 11,
+    "expected_failure": true,
+    "output": "FONT_METRICS_FAILED stage=11\r\n"
+  },
+  "native_probes": {
+    "font_and_window_metrics": "PASSED_ACROSS_RESTART",
+    "host": {
+      "low_address_mapping": false,
+      "mapping_errno": 12,
+      "native_arm64": true,
+      "page_size": 16384,
+      "translated": false
+    },
+    "schema": 2,
+    "shared_data_negative_control": "EXPECTED_READ_FAILURE",
+    "status": "X64_CPU_AND_WINDOW_SMOKE_PASSED",
+    "steam_launched": false,
+    "variant": "isotope",
+    "workload_sha256": "e1f77a21679267bcba796656eed13cf856edd470e3ae5153df5240d433ed1f1a"
+  },
+  "relocated_release": {
+    "schema": 2,
+    "managed_archive_import": "PASSED",
+    "integrity_and_native_dependencies": "PASSED",
+    "guest_smoke": {
+      "x64": {
+        "status": "PASSED"
+      },
+      "x64-font-window": {
+        "status": "PASSED"
+      },
+      "x86": {
+        "status": "PASSED"
+      }
+    },
+    "x86_required": false,
+    "steam": "NOT_RUN",
+    "gameplay": "NOT_RUN",
+    "status": "PASSED",
+    "prefix_cleanup": "PASSED"
+  },
+  "game_runs": {
+    "dirt": {
+      "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/dx12/logs/dirt-690790-20261020-221726-439079000.runner.json",
+      "status": "bounded",
+      "exit_code": 0,
+      "timings": {
+        "preparation_ms": 40506,
+        "runtime_ms": 180424,
+        "cleanup_ms": 1612,
+        "total_ms": 222543
+      },
+      "engine": "Wine + DXVK (DX10-DX11) + Mesa KosmicKrisp Vulkan",
+      "cache_paths": {
+        "DXVK_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\0fcf7af9cf544a34a324e16bcace33c0a8866cb95dea5566f17a9b359d4965fe\\dxvk",
+        "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/integrated-compatdata/690790/nucleon/shader-cache/v1/690790/arm64-fex/isotope-fonts-abi1/x64/dxvk/a432ca37175ac46cce1f44cef8c40ff8fdc93a02594b10d2405141a0617aa541/mesa"
+      },
+      "gameplay_validation": "MENU_INPUT_NOT_CONFIRMED",
+      "metal_assertion": false,
+      "vulkan_errors": false,
+      "swapchains": [],
+      "missing_dynamic_unused_attachments": false
+    },
+    "dmc5": {
+      "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/dx12/logs/dmc5-601150-20261020-222129-312818000.runner.json",
+      "status": "bounded",
+      "exit_code": 0,
+      "timings": {
+        "preparation_ms": 41103,
+        "runtime_ms": 240064,
+        "cleanup_ms": 1619,
+        "total_ms": 282787
+      },
+      "engine": "Wine + VKD3D-Proton (DX12) + Mesa KosmicKrisp Vulkan",
+      "cache_paths": {
+        "DXVK_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\80ee6610f0bf79090992ee5773360fe97bf8f782b7854ee4c6cb483eae7a9a0f\\dxvk",
+        "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/integrated-compatdata/601150/nucleon/shader-cache/v1/601150/arm64-fex/isotope-fonts-abi1/x64/vkd3d/29d60b034d39906b98f27a7663a6f96a78408c4cac3b3863cc90144fefb81b1a/mesa",
+        "VKD3D_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\80ee6610f0bf79090992ee5773360fe97bf8f782b7854ee4c6cb483eae7a9a0f\\vkd3d"
+      },
+      "gameplay_validation": "MENU_INPUT_NOT_CONFIRMED",
+      "metal_assertion": false,
+      "vulkan_errors": false,
+      "swapchains": [
+        "1518 x 962"
+      ],
+      "missing_dynamic_unused_attachments": true
+    }
+  },
+  "dmc5_settings_restored": true,
+  "previous_driver_unchanged": true,
+  "nucleon_committed": false,
+  "notes": [
+    "Fresh game prefixes used; user prefixes and saves preserved.",
+    "User visual confirmation is pending for these repaired-runtime runs.",
+    "Previous user reports of missing windows refer to pre-fix runs.",
+    "No release published or repository pushed."
+  ]
+}

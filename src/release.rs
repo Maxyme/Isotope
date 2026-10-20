@@ -204,6 +204,7 @@ pub fn core_descriptor() -> String {
 }
 pub fn stage_core(build: &Build, target: &Path) -> Result<()> {
     let runtime = build.work.join("runtime");
+    crate::fonts::validate_assets(&runtime)?;
     let receipt: WineBuildReceipt = read_json(&runtime.join("build.json"))?;
     ensure!(
         receipt.status == BuildStatus::BuiltNotExecutionValidated
@@ -301,7 +302,12 @@ pub fn stage_core(build: &Build, target: &Path) -> Result<()> {
             continue;
         }
         if magic.starts_with(b"MZ") {
-            pe.push(p(&path));
+            if matches!(
+                object::FileKind::parse(fs::read(&path)?.as_slice()),
+                Ok(object::FileKind::Pe32 | object::FileKind::Pe64)
+            ) {
+                pe.push(p(&path));
+            }
         } else if magic == [0xcf, 0xfa, 0xed, 0xfe] || magic == [0xfe, 0xed, 0xfa, 0xcf] {
             native.push(path);
         }
@@ -389,6 +395,12 @@ fn snapshot_at(build: &Build, stage: &Path, builder: &Path) -> Result<Value> {
         }
         manifest.insert(label,json!({"revision":revision,"downstream_modified_paths":git(&root,&["diff","--name-only","HEAD"])?.lines().collect::<Vec<_>>(),"files":digests}));
     }
+    let archive = crate::common::fetch_archive(&build.workspace, &build.recipe.freetype)?;
+    let destination = stage
+        .join("sources/freetype")
+        .join(&build.recipe.freetype.archive);
+    copy(&archive, &destination)?;
+    manifest.insert("freetype", serde_json::json!({"source":build.recipe.freetype,"files":{&build.recipe.freetype.archive:{"sha256":sha(&destination)?}}}));
     let value = serde_json::to_value(manifest)?;
     write_json(&stage.join("SOURCE-MANIFEST.json"), &value)?;
     Ok(value)
@@ -582,6 +594,47 @@ fn validate_install(
             );
             write_json(&logs.join("validation.json"), &validation)?;
         }
+        validation.guest_smoke.insert(
+            "x64-font-window".into(),
+            GuestOutcome::new(ValidationStatus::Testing),
+        );
+        write_json(&logs.join("validation.json"), &validation)?;
+        let exe = logs.join("font-window-x64.exe");
+        build.run(
+            build.compiler.join("bin/x86_64-w64-mingw32-clang"),
+            &[
+                "-O2".into(),
+                "-municode".into(),
+                p(repo().join("tools/runtime-probes/window.c")),
+                "-o".into(),
+                p(&exe),
+                "-luser32".into(),
+                "-lgdi32".into(),
+            ],
+            None,
+            "compile-font-window.log",
+        )?;
+        for pass in ["initial", "restart"] {
+            marker_run(
+                &descriptor.loader,
+                &[p(&exe), "--metrics-only".into()],
+                &env,
+                None,
+                &logs.join(format!("font-window-{pass}.log")),
+                30,
+                0,
+                "NUCLEON_FEX_FONT_METRICS_OK",
+            )?;
+            crate::common::cleanup_server(
+                &descriptor.server,
+                &env,
+                &logs.join(format!("font-cleanup-{pass}.log")),
+            )?;
+        }
+        validation.guest_smoke.insert(
+            "x64-font-window".into(),
+            GuestOutcome::new(ValidationStatus::Passed),
+        );
         Ok(())
     })();
     let wait = crate::common::cleanup_server(&descriptor.server, &env, &logs.join("cleanup.log"));
@@ -826,6 +879,9 @@ mod tests {
         fs::write(build.wine.join("helper.h"), "borrowed helper\n").unwrap();
         git(&build.wine, &["add", "--intent-to-add", "helper.h"]).unwrap();
         fs::write(build.wine.join("untracked-secret"), "must not ship").unwrap();
+        let dependency_archive = build.workspace.join(&build.recipe.freetype.archive);
+        fs::write(&dependency_archive, b"pinned dependency source").unwrap();
+        build.recipe.freetype.sha256 = sha(&dependency_archive).unwrap();
         let snapshot = dir.path().join("snapshot");
         let manifest = snapshot_at(&build, &snapshot, &nucleon).unwrap();
         fs::write(build.wine.join("tracked.c"), "changed after snapshot").unwrap();
@@ -844,6 +900,19 @@ mod tests {
                 .is_file()
         );
         assert!(snapshot.join("sources/isotope/src/artifacts.rs").is_file());
+        assert_eq!(
+            fs::read(
+                snapshot
+                    .join("sources/freetype")
+                    .join(&build.recipe.freetype.archive)
+            )
+            .unwrap(),
+            b"pinned dependency source"
+        );
+        assert_eq!(
+            manifest["freetype"]["files"][&build.recipe.freetype.archive]["sha256"],
+            build.recipe.freetype.sha256
+        );
     }
     #[test]
     fn build_identity_covers_guest_dlls_and_both_native_companions() {
@@ -887,6 +956,16 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, native).unwrap();
         }
+        for name in [
+            crate::fonts::LIBRARY,
+            crate::fonts::FONT,
+            "share/wine/fonts/tahomabd.ttf",
+            "share/licenses/freetype/FTL.TXT",
+        ] {
+            let path = runtime.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, native).unwrap();
+        }
         write_json(
             &runtime.join("build.json"),
             &WineBuildReceipt {
@@ -908,6 +987,17 @@ mod tests {
             },
         )
         .unwrap();
+        let mut guest = vec![0u8; 256];
+        guest[..2].copy_from_slice(b"MZ");
+        guest[60..64].copy_from_slice(&128u32.to_le_bytes());
+        guest[128..132].copy_from_slice(b"PE\0\0");
+        guest[152..154].copy_from_slice(&0x20bu16.to_le_bytes());
+        assert!(matches!(
+            object::FileKind::parse(guest.as_slice()),
+            Ok(object::FileKind::Pe64)
+        ));
+        let bitmap_font = runtime.join("share/wine/fonts/bitmap.fon");
+        fs::write(&bitmap_font, b"MZ legacy NE bitmap font").unwrap();
         for (sub, name) in [
             ("arm64ec/Bin", "libarm64ecfex.dll"),
             ("wow64/Bin", "libwow64fex.dll"),
@@ -919,7 +1009,7 @@ mod tests {
             fs::write(
                 path,
                 if name.ends_with("dll") {
-                    b"MZ guest".as_slice()
+                    guest.as_slice()
                 } else {
                     native
                 },
@@ -967,6 +1057,10 @@ mod tests {
         set(&mut build.env, "TOOL_CAPTURE", &capture);
         let target = dir.path().join("package");
         stage_core(&build, &target).unwrap();
+        assert_eq!(
+            fs::read(target.join("share/wine/fonts/bitmap.fon")).unwrap(),
+            b"MZ legacy NE bitmap font"
+        );
         assert_eq!(fs::read(target.join("bin/wine")).unwrap(), native);
         assert!(
             target

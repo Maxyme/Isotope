@@ -36,6 +36,7 @@ pub struct Recipe {
     pub sources: Sources,
     pub toolchain: ArchivePin,
     pub reference: ArchivePin,
+    pub freetype: ArchivePin,
     pub wine: WineRecipe,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -123,6 +124,7 @@ impl Build {
                 8 * 1024 * 1024 * 1024,
             )?;
         }
+        fetch_archive(&self.workspace, &self.recipe.freetype)?;
         if reference {
             fetch_archive(&self.workspace, &self.recipe.reference)?;
         }
@@ -412,6 +414,7 @@ impl Build {
     }
     pub fn build_wine(&self, extra: &[String], sdk: Option<&Path>) -> Result<()> {
         let names = self.prepare_wine(extra)?;
+        let freetype = crate::fonts::prepare(self)?;
         let build = self.work.join("wine-build");
         fs::create_dir_all(&build)?;
         let mut env = self.env.clone();
@@ -433,6 +436,21 @@ impl Build {
             );
             set(&mut env, "DYLD_LIBRARY_PATH", sdk.join("lib"));
         }
+        set(
+            &mut env,
+            "FREETYPE_CFLAGS",
+            format!("-I{}/include/freetype2", freetype.display()),
+        );
+        set(
+            &mut env,
+            "FREETYPE_LIBS",
+            format!("-L{}/lib -lfreetype", freetype.display()),
+        );
+        set(
+            &mut env,
+            "ISOTOPE_FREETYPE_SHA256",
+            sha(&freetype.join("lib/libfreetype.6.dylib"))?,
+        );
         let mut args = vec![
             "--prefix=/".into(),
             "--bindir=/bin".into(),
@@ -465,6 +483,11 @@ impl Build {
                 0,
             )
         })?;
+        ensure!(
+            fs::read_to_string(build.join("include/config.h"))?
+                .contains("#define SONAME_LIBFREETYPE \"libfreetype."),
+            "Wine requires bundled FreeType"
+        );
         if sdk.is_some() {
             ensure!(
                 fs::read_to_string(build.join("include/config.h"))?
@@ -473,6 +496,24 @@ impl Build {
                 "Wine must use the Khronos Vulkan loader"
             );
         }
+        // The system shell strips DYLD_*; only this build tool needs a private build rpath.
+        run(
+            "make",
+            &[
+                "-W".into(),
+                "tools/sfnt2fon/sfnt2fon.o".into(),
+                "tools/sfnt2fon/sfnt2fon".into(),
+                format!(
+                    "LDFLAGS=-arch arm64 -Wl,-rpath,{}",
+                    freetype.join("lib").display()
+                ),
+            ],
+            Some(&env),
+            Some(&build),
+            Some(&self.logs.join("font-tool-build.log")),
+            120,
+            0,
+        )?;
         run(
             "make",
             &[format!("-j{}", self.jobs)],
@@ -494,6 +535,7 @@ impl Build {
             4 * 60 * 60,
             0,
         )?;
+        crate::fonts::stage(self, &freetype)?;
         self.record_wine(&names)
     }
     pub fn record_wine(&self, names: &[String]) -> Result<()> {
@@ -553,6 +595,8 @@ impl Build {
             "bin/wineserver",
             "lib/wine/aarch64-unix/ntdll.so",
             "lib/wine/aarch64-unix/winemac.so",
+            crate::fonts::LIBRARY,
+            crate::fonts::FONT,
         ]
         .map(str::to_owned);
         write_json(
@@ -580,6 +624,7 @@ impl Build {
         )
     }
     pub fn runtime_environment(&self, prefix: &str) -> Result<(PathBuf, Environment)> {
+        fs::create_dir_all(self.work.join("prefixes"))?;
         let runtime = self.work.join("runtime");
         let loader = runtime.join("bin/wine");
         ensure!(
@@ -765,22 +810,22 @@ impl Build {
                 "NUCLEON_FEX_FAIL stage=shared-data-read",
             )?;
             report["shared_data_negative_control"] = "EXPECTED_READ_FAILURE".into();
+            let exe = probes.join("window-x64.exe");
+            self.run(
+                self.compiler.join("bin/x86_64-w64-mingw32-gcc"),
+                &[
+                    "-O2".into(),
+                    "-municode".into(),
+                    p(repo().join("tools/runtime-probes/window.c")),
+                    "-o".into(),
+                    p(&exe),
+                    "-luser32".into(),
+                    "-lgdi32".into(),
+                ],
+                None,
+                "window-build.log",
+            )?;
             if window {
-                let exe = probes.join("window-x64.exe");
-                self.run(
-                    self.compiler.join("bin/x86_64-w64-mingw32-gcc"),
-                    &[
-                        "-O2".into(),
-                        "-municode".into(),
-                        p(repo().join("tools/runtime-probes/window.c")),
-                        "-o".into(),
-                        p(&exe),
-                        "-luser32".into(),
-                        "-lgdi32".into(),
-                    ],
-                    None,
-                    "window-build.log",
-                )?;
                 marker_run(
                     &loader,
                     &[p(exe)],
@@ -792,6 +837,28 @@ impl Build {
                     "NUCLEON_FEX_WINDOW_OK",
                 )?;
             }
+            marker_run(
+                &loader,
+                &[p(probes.join("window-x64.exe")), "--metrics-only".into()],
+                &env,
+                None,
+                &self.logs.join("font-metrics.log"),
+                30,
+                0,
+                "NUCLEON_FEX_FONT_METRICS_OK",
+            )?;
+            self.stop_server(&env)?;
+            marker_run(
+                &loader,
+                &[p(probes.join("window-x64.exe")), "--metrics-only".into()],
+                &env,
+                None,
+                &self.logs.join("font-metrics-restart.log"),
+                30,
+                0,
+                "NUCLEON_FEX_FONT_METRICS_OK",
+            )?;
+            report["font_and_window_metrics"] = "PASSED_ACROSS_RESTART".into();
             Ok(())
         })();
         finish_probe(
@@ -829,6 +896,9 @@ fn wine_configure_environment(env: &Environment) -> Environment {
         "CPPFLAGS",
         "LDFLAGS",
         "LIBS",
+        "FREETYPE_CFLAGS",
+        "FREETYPE_LIBS",
+        "ISOTOPE_FREETYPE_SHA256",
         "AR",
         "AS",
         "LD",
@@ -938,6 +1008,9 @@ mod tests {
             ("PATH", "/tools"),
             ("CC", "/compiler"),
             ("CFLAGS", "-O2"),
+            ("FREETYPE_CFLAGS", "-I/pinned/include/freetype2"),
+            ("FREETYPE_LIBS", "-L/pinned/lib -lfreetype"),
+            ("ISOTOPE_FREETYPE_SHA256", "digest"),
             ("DEVELOPER_DIR", "/xcode"),
             ("ac_cv_test", "yes"),
             ("CONFIG_SITE", "/unrecorded/site"),
@@ -948,7 +1021,16 @@ mod tests {
         .collect();
         let sanitized = wine_configure_environment(&env);
         assert!(!sanitized.contains_key(std::ffi::OsStr::new("GITHUB_TOKEN")));
-        for name in ["PATH", "CC", "CFLAGS", "DEVELOPER_DIR", "ac_cv_test"] {
+        for name in [
+            "PATH",
+            "CC",
+            "CFLAGS",
+            "DEVELOPER_DIR",
+            "ac_cv_test",
+            "FREETYPE_CFLAGS",
+            "FREETYPE_LIBS",
+            "ISOTOPE_FREETYPE_SHA256",
+        ] {
             assert_eq!(
                 sanitized[std::ffi::OsStr::new(name)],
                 env[std::ffi::OsStr::new(name)]

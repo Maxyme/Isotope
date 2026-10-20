@@ -1,12 +1,11 @@
-schema = 1
-
-[steamac]
-url = "https://github.com/fxgl/steamac.git"
-revision = "6ef3992d869e41291bb2841bef2e71ae318d2a02"
+schema = 2
 
 [mesa]
-url = "https://gitlab.freedesktop.org/mesa/mesa.git"
-revision = "ce576c29ed90822ea15564e1e60cb48e455881bb"
+url = "https://github.com/Maxyme/mesa.git"
+revision = "e3d0c46f52479f16da810bfbccfbc123ec1674c0"
+
+[driver_environment]
+MESA_KK_EXPERIMENTAL = "image_view_min_lod"
 
 [python]
 meson = "1.12.1"

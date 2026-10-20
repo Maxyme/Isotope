@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "decision": "Keep patched KosmicKrisp; unpatched upstream is not compatible with the tested runtime.",
+  "hardware": "Apple M5 Max",
+  "os": "27.2",
+  "mesa_revisions": {
+    "pinned": "ce576c29ed90822ea15564e1e60cb48e455881bb",
+    "main": "7f13762f3fae332deee4c58b3ac00d1ac7a45153"
+  },
+  "steamac_revision": "6ef3992d869e41291bb2841bef2e71ae318d2a02",
+  "upstream_sources_clean": true,
+  "native_probes": {
+    "patched": {
+      "variant": "patched",
+      "driver": "/Users/maximejacques/code/Nucleon/target/arm64-fex/dx12/driver",
+      "sha256": "1cd31de2e7d51792aba62ebececf001cca7c30b038f6e7b19d0968bb53cbdf40",
+      "tests": {
+        "driver-caps": {
+          "exit_code": 0,
+          "seconds": 0.17,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/driver-caps.log"
+        },
+        "geometry": {
+          "exit_code": 0,
+          "seconds": 1.4,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/geometry.log"
+        },
+        "robust_access": {
+          "exit_code": 0,
+          "seconds": 0.39,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/robust_access.log"
+        },
+        "device_address": {
+          "exit_code": 0,
+          "seconds": 0.23,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/device_address.log"
+        },
+        "texel_buffer": {
+          "exit_code": 0,
+          "seconds": 1.29,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/texel_buffer.log"
+        },
+        "queries": {
+          "exit_code": 0,
+          "seconds": 2.28,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/queries.log"
+        },
+        "sparse": {
+          "exit_code": 1,
+          "seconds": 2.13,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/patched/sparse.log"
+        }
+      }
+    },
+    "pinned": {
+      "variant": "pinned",
+      "driver": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/driver-pinned",
+      "sha256": "8e36a2298e4848bdb5165b4a0cc98372dfbe7832baf5a77eed07b1d3f4ddefa4",
+      "tests": {
+        "driver-caps": {
+          "exit_code": 1,
+          "seconds": 0.32,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/driver-caps.log"
+        },
+        "geometry": {
+          "exit_code": 2,
+          "seconds": 0.16,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/geometry.log"
+        },
+        "robust_access": {
+          "exit_code": 0,
+          "seconds": 1.54,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/robust_access.log"
+        },
+        "device_address": {
+          "exit_code": 0,
+          "seconds": 0.24,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/device_address.log"
+        },
+        "texel_buffer": {
+          "exit_code": 1,
+          "seconds": 0.17,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/texel_buffer.log"
+        },
+        "queries": {
+          "exit_code": -6,
+          "seconds": 0.36,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/queries.log"
+        },
+        "sparse": {
+          "exit_code": 1,
+          "seconds": 0.37,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/pinned/sparse.log"
+        }
+      }
+    },
+    "main": {
+      "variant": "main",
+      "driver": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/driver-main",
+      "sha256": "c67b149b143c09f545a1de6ef7284c2da425eac4f20f97a135ebb8a52c001a6a",
+      "tests": {
+        "driver-caps": {
+          "exit_code": 1,
+          "seconds": 0.39,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/driver-caps.log"
+        },
+        "geometry": {
+          "exit_code": 2,
+          "seconds": 0.1,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/geometry.log"
+        },
+        "robust_access": {
+          "exit_code": 0,
+          "seconds": 0.97,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/robust_access.log"
+        },
+        "device_address": {
+          "exit_code": 0,
+          "seconds": 0.11,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/device_address.log"
+        },
+        "texel_buffer": {
+          "exit_code": 1,
+          "seconds": 0.11,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/texel_buffer.log"
+        },
+        "queries": {
+          "exit_code": -6,
+          "seconds": 0.18,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/queries.log"
+        },
+        "sparse": {
+          "exit_code": 1,
+          "seconds": 0.13,
+          "log": "/Users/maximejacques/code/isotope/target/mesa-unpatched-evaluation/logs/main/sparse.log"
+        }
+      }
+    }
+  },
+  "dirt_rally_2_dx11": {
+    "pinned": {
+      "receipt": "target/mesa-unpatched-evaluation/nucleon-pinned/dx12/logs/dirt-690790-20261020-153716-804648000.runner.json",
+      "status": "bounded",
+      "gameplay_validation": "not-validated",
+      "dxvk_no_adapters": true,
+      "access_violation": true
+    },
+    "main": {
+      "receipt": "target/mesa-unpatched-evaluation/nucleon-main/dx12/logs/dirt-690790-20261020-153950-838145000.runner.json",
+      "status": "bounded",
+      "gameplay_validation": "not-validated",
+      "dxvk_no_adapters": true,
+      "access_violation": true
+    }
+  },
+  "working_driver_unchanged": true,
+  "patch_count": 47,
+  "patch_bytes": 725683
+}

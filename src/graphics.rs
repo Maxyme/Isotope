@@ -1,10 +1,10 @@
 use crate::common::read_json;
-use crate::receipts::{OverlayReceipt, WineBuildReceipt};
+use crate::receipts::WineBuildReceipt;
 use crate::{
     build::{Build, finish_probe, marker_run},
     common::{
         ArchivePin, Environment, Pin, checkout, copy, copy_tree, fetch_archive, git, hash_files,
-        json, key, output, p, repo, run, set, sha, source_diff, write_json,
+        json, key, output, p, repo, run, set, sha, write_json,
     },
 };
 use anyhow::{Context, Result, ensure};
@@ -21,8 +21,9 @@ pub const RECIPE: &str = "assets/wine/recipes/arm64-fex-dx12.toml";
 #[serde(deny_unknown_fields)]
 pub struct GraphicsRecipe {
     pub schema: u32,
-    pub steamac: Pin,
     pub mesa: Pin,
+    #[serde(default)]
+    pub driver_environment: BTreeMap<String, String>,
     pub python: BTreeMap<String, String>,
     pub wine: ExtraPatches,
     pub archives: Archives,
@@ -67,7 +68,7 @@ impl Graphics {
         let logs = work.join("logs");
         fs::create_dir_all(&logs)?;
         let pin: GraphicsRecipe = toml::from_str(&fs::read_to_string(repo().join(RECIPE))?)?;
-        ensure!(pin.schema == 1, "Unsupported graphics recipe");
+        ensure!(pin.schema == 2, "Unsupported graphics recipe");
         let mut env = base.env.clone();
         let path = env
             .get(std::ffi::OsStr::new("PATH"))
@@ -82,6 +83,9 @@ impl Graphics {
                 work.display()
             ),
         );
+        for (name, value) in &pin.driver_environment {
+            set(&mut env, name, value);
+        }
         Ok(Self {
             sources: work.join("sources"),
             base,
@@ -94,24 +98,6 @@ impl Graphics {
         })
     }
     pub fn wine_build(&self) -> Result<Build> {
-        let mut build = Build::new(&self.base.workspace, self.base.jobs)?;
-        build.work = self.work.clone();
-        build.logs = self.logs.clone();
-        build.wine = self.sources.join("wine");
-        build.env = self.env.clone();
-        let link = self.work.join("fex");
-        if !link.exists() {
-            std::os::unix::fs::symlink(self.base.work.join("fex"), link)?;
-        }
-        Ok(build)
-    }
-    pub fn fetch(&self) -> Result<()> {
-        for (name, pin) in [("steamac", &self.pin.steamac), ("mesa", &self.pin.mesa)] {
-            checkout(&self.sources.join(name), pin)?;
-        }
-        for pin in self.pin.archives.values() {
-            fetch_archive(&self.work.join("archives"), pin)?;
-        }
         let wine = self.sources.join("wine");
         if !wine.join(".git").exists() {
             fs::create_dir_all(&self.sources)?;
@@ -138,6 +124,29 @@ impl Graphics {
                     &self.base.recipe.sources.wine.revision,
                 ],
             )?;
+        }
+        let mut build = Build::new(&self.base.workspace, self.base.jobs)?;
+        build.work = self.work.clone();
+        build.logs = self.logs.clone();
+        build.wine = self.sources.join("wine");
+        build.env = self.env.clone();
+        let link = self.work.join("fex");
+        if !link.exists() {
+            std::os::unix::fs::symlink(self.base.work.join("fex"), link)?;
+        }
+        Ok(build)
+    }
+    fn mesa_source(&self) -> PathBuf {
+        self.sources
+            .join(format!("mesa-{}", self.pin.mesa.revision))
+    }
+    fn driver_dir(&self) -> PathBuf {
+        self.work.join(format!("driver-{}", self.pin.mesa.revision))
+    }
+    pub fn fetch(&self) -> Result<()> {
+        checkout(&self.mesa_source(), &self.pin.mesa)?;
+        for pin in self.pin.archives.values() {
+            fetch_archive(&self.work.join("archives"), pin)?;
         }
         let venv = self.work.join("venv");
         if !venv.join("bin/python3").exists() {
@@ -189,61 +198,17 @@ impl Graphics {
         write_json(&path, &receipt)
     }
     pub fn prepare_mesa(&self) -> Result<()> {
-        for (name, pin) in [("steamac", &self.pin.steamac), ("mesa", &self.pin.mesa)] {
-            ensure!(
-                git(&self.sources.join(name), &["rev-parse", "HEAD"])? == pin.revision,
-                "Unexpected {name} revision"
-            );
-        }
-        let source = self.sources.join("mesa");
-        let marker = source.join(".nucleon-overlay.json");
-        let mut patches: Vec<_> =
-            fs::read_dir(self.sources.join("steamac/host/kosmickrisp/patches"))?
-                .map(|e| e.map(|e| e.path()))
-                .collect::<std::io::Result<_>>()?;
-        patches.retain(|p| p.extension().is_some_and(|s| s == "patch"));
-        patches.sort();
-        ensure!(!patches.is_empty(), "Steamac patches missing; run fetch");
-        let hashes: BTreeMap<_, _> = patches
-            .iter()
-            .map(|path| Ok((p(path.file_name().unwrap()), sha(path)?)))
-            .collect::<Result<_>>()?;
-        if marker.exists() {
-            let old: OverlayReceipt = read_json(&marker)?;
-            ensure!(
-                old.diff_sha256 == source_diff(&source)? && old.patches == hashes,
-                "Preserve modified Mesa checkout"
-            );
-            return Ok(());
-        }
+        let source = self.mesa_source();
+        ensure!(
+            git(&source, &["rev-parse", "HEAD"])? == self.pin.mesa.revision,
+            "Unexpected Mesa revision"
+        );
         ensure!(
             git(&source, &["status", "--porcelain"])?.is_empty(),
-            "Preserve modified Mesa checkout"
+            "Preserve modified Mesa checkout {}",
+            source.display()
         );
-        for patch in patches {
-            run(
-                "git",
-                &["apply".into(), "--whitespace=nowarn".into(), p(patch)],
-                None,
-                Some(&source),
-                Some(&self.logs.join("mesa-patches.log")),
-                60,
-                0,
-            )?;
-        }
-        let untracked = git(&source, &["ls-files", "--others", "--exclude-standard"])?;
-        if !untracked.is_empty() {
-            let mut args = vec!["add", "--intent-to-add", "--"];
-            args.extend(untracked.lines());
-            git(&source, &args)?;
-        }
-        write_json(
-            &marker,
-            &OverlayReceipt {
-                diff_sha256: source_diff(&source)?,
-                patches: hashes,
-            },
-        )
+        Ok(())
     }
     pub fn build_driver(&self) -> Result<()> {
         self.prepare_mesa()?;
@@ -268,8 +233,8 @@ impl Graphics {
                     && v["version"] == *version)),
             "Pinned Meson dependencies missing; run dx12 fetch"
         );
-        let source = self.sources.join("mesa");
-        let clc = self.work.join("clc");
+        let source = self.mesa_source();
+        let clc = self.work.join(format!("clc-{}", self.pin.mesa.revision));
         let common = [
             "--buildtype=release",
             "-Db_ndebug=true",
@@ -282,11 +247,15 @@ impl Graphics {
         ]
         .map(str::to_owned);
         for driver in [false, true] {
-            let build = self.work.join(if driver {
-                "mesa-build"
-            } else {
-                "mesa-clc-build"
-            });
+            let build = self.work.join(format!(
+                "{}-{}",
+                if driver {
+                    "mesa-build"
+                } else {
+                    "mesa-clc-build"
+                },
+                self.pin.mesa.revision
+            ));
             let mut env = self.env.clone();
             if driver {
                 let path = env
@@ -359,12 +328,13 @@ impl Graphics {
                 0,
             )?;
         }
-        let stage = self.work.join("driver");
+        let stage = self.driver_dir();
         let native = stage.join("libvulkan_kosmickrisp.dylib");
         copy(
-            &self
-                .work
-                .join("mesa-build/src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib"),
+            &self.work.join(format!(
+                "mesa-build-{}/src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib",
+                self.pin.mesa.revision
+            )),
             &native,
         )?;
         run(
@@ -398,28 +368,20 @@ impl Graphics {
         )?;
         write_json(
             &stage.join("build.json"),
-            &json!({"schema":2,"status":"BUILT_NOT_EXECUTION_VALIDATED","recipe_sha256":sha(&repo().join(RECIPE))?,"sources":{"steamac":self.pin.steamac,"mesa":self.pin.mesa},"overlay":json(&source.join(".nucleon-overlay.json"))?,"driver_sha256":sha(&native)?,"llvm":output("llvm-config",&["--version".into()],Some(&self.env),None)?}),
+            &json!({"schema":2,"status":"BUILT_NOT_EXECUTION_VALIDATED","recipe_sha256":sha(&repo().join(RECIPE))?,"sources":{"mesa":self.pin.mesa},"environment":self.pin.driver_environment,"driver_sha256":sha(&native)?,"llvm":output("llvm-config",&["--version".into()],Some(&self.env),None)?}),
         )?;
         copy(
             &source.join("docs/license.rst"),
             &stage.join("MESA-LICENSE.rst"),
         )?;
-        fs::write(
-            stage.join("STEAMAC-LICENSE"),
-            git(
-                &self.sources.join("steamac"),
-                &["show", &format!("{}:LICENSE", self.pin.steamac.revision)],
-            )?,
+        copy(
+            &source.join("src/kosmickrisp/tests/isotope/LICENSE"),
+            &stage.join("STEAMAC-LICENSE"),
         )?;
-        for entry in fs::read_dir(self.sources.join("steamac/host/kosmickrisp/patches"))? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|s| s == "patch") {
-                copy(
-                    &path,
-                    &stage.join("source-patches").join(path.file_name().unwrap()),
-                )?;
-            }
-        }
+        copy(
+            &source.join("src/kosmickrisp/isotope-sources.json"),
+            &stage.join("MESA-SOURCES.json"),
+        )?;
         Ok(())
     }
     pub fn graphics(&self) -> Result<PathBuf> {
@@ -531,7 +493,7 @@ impl Graphics {
             );
         }
         inputs["emulators"] = serde_json::to_value(emulators)?;
-        let driver = self.work.join("driver");
+        let driver = self.driver_dir();
         let loader = self.sdk.join("lib/libvulkan.1.dylib");
         if let Some(graphics) = &graphics {
             inputs["graphics"] = json(&graphics.join("build.json"))?;
@@ -585,6 +547,12 @@ impl Graphics {
             toml::Value::String(if vulkan { "valve-redirect" } else { "bridge" }.into());
         let mut paths = BTreeMap::from([("dxmt", "share/nucleon/dxmt")]);
         if let Some(graphics) = graphics {
+            let environment = descriptor["environment"]
+                .as_table_mut()
+                .context("Runtime environment missing")?;
+            for (name, value) in &self.pin.driver_environment {
+                environment.insert(name.clone(), toml::Value::String(value.clone()));
+            }
             copy_tree(&driver, &stage.join("lib/vulkan"))?;
             copy(&loader, &stage.join("lib/vulkan/libvulkan.1.dylib"))?;
             copy_tree(&graphics, &shared.join("graphics"))?;
@@ -654,7 +622,7 @@ impl Graphics {
             "DYLD_LIBRARY_PATH",
             format!(
                 "{}:{}:{}",
-                self.work.join("driver").display(),
+                self.driver_dir().display(),
                 self.work.join("runtime/lib/wine/aarch64-unix").display(),
                 self.sdk.join("lib").display()
             ),
@@ -663,7 +631,7 @@ impl Graphics {
             set(
                 &mut env,
                 name,
-                self.work.join("driver/kosmickrisp_icd.json"),
+                self.driver_dir().join("kosmickrisp_icd.json"),
             );
         }
         let overrides = env[std::ffi::OsStr::new("WINEDLLOVERRIDES")]
@@ -695,7 +663,7 @@ impl Graphics {
         Ok((build, loader, env))
     }
     pub fn probe(&self, api: &str) -> Result<()> {
-        let probes = self.work.join("probes");
+        let probes = self.work.join(format!("probes-{}", self.pin.mesa.revision));
         fs::create_dir_all(&probes)?;
         let dx12 = api == "d3d12";
         let dx11 = api == "dxmt";
@@ -916,7 +884,7 @@ impl Graphics {
         )
     }
     pub fn probe_driver(&self) -> Result<()> {
-        let driver = self.work.join("driver/libvulkan_kosmickrisp.dylib");
+        let driver = self.driver_dir().join("libvulkan_kosmickrisp.dylib");
         run(
             "codesign",
             &["--verify".into(), "--strict".into(), p(&driver)],
@@ -926,14 +894,14 @@ impl Graphics {
             60,
             0,
         )?;
-        let probes = self.work.join("probes");
+        let probes = self.work.join(format!("probes-{}", self.pin.mesa.revision));
         fs::create_dir_all(&probes)?;
-        let here = self.sources.join("steamac/host/moltenvk");
+        let here = self.mesa_source().join("src/kosmickrisp/tests/isotope");
         let mut env = self.env.clone();
         for (name, value) in [
             (
                 "VK_DRIVER_FILES",
-                p(self.work.join("driver/kosmickrisp_icd.json")),
+                p(self.driver_dir().join("kosmickrisp_icd.json")),
             ),
             ("REPRO_DRIVER", "kosmickrisp".into()),
             ("MTL_DEBUG_LAYER", "1".into()),
@@ -942,7 +910,7 @@ impl Graphics {
                 "DYLD_LIBRARY_PATH",
                 format!(
                     "{}:{}",
-                    self.work.join("driver").display(),
+                    self.driver_dir().display(),
                     self.sdk.join("lib").display()
                 ),
             ),
@@ -1102,6 +1070,8 @@ mod recipe_tests {
             original.replace("[archives.dxvk]", "[archives.dxvkk]"),
             original.replace("unix_patches", "unix_patch"),
             original.replace("patches =", "patch ="),
+            format!("{original}\n[steamac]\nurl = \"unused\"\nrevision = \"unused\"\n"),
+            original.replace("\"image_view_min_lod\"", "true"),
         ] {
             if bad != original {
                 assert!(toml::from_str::<GraphicsRecipe>(&bad).is_err());

@@ -171,3 +171,36 @@ with `release validate --require-x86`. 32 Rust tests, strict Clippy and formatti
 pass; one archive-fixture test remains intentionally ignored. The DiRT-tested
 graphics runtime is retained locally in `target/upstream-game-runtime`.
 See [UPSTREAM-VALIDATION.json](UPSTREAM-VALIDATION.json) for the precise scope.
+
+### Mesa driver source
+
+The graphics recipe pins [Maxyme/Mesa](https://github.com/Maxyme/mesa), based on
+`athei/mesa` with focused wireframe, linear attachment and query allocation fixes.
+Isotope fetches this single Mesa source and does not clone or apply patches from
+Steamac. Native probes and their licenses live with the Mesa source. Mesa
+checkouts and compiler/driver build directories are separated by source revision.
+
+`MESA_KK_EXPERIMENTAL=image_view_min_lod` is explicit in the graphics recipe and
+is applied to native probes and assembled Vulkan runtimes. The fork's macOS CI
+runs the seven native probe groups and a linear attachment GPU readback test.
+Sparse D32 images remain unsupported and their depth cases are skipped; polygon
+point mode retains the wireframe fallback. Native tests are not game validation.
+
+## Font support and startup validation
+
+Wine requires the pinned FreeType source archive in the core recipe. Isotope builds
+an ARM64 shared library with optional external codec/shaping dependencies disabled,
+packages it beside Wine's native modules, and includes Wine's replacement fonts.
+No Homebrew font library is needed at runtime. The archive checksum, library/font
+hashes, upstream license texts and complete dependency source archive accompany
+binary/source releases.
+
+`fex probe` now always checks real Tahoma text metrics and an exact 480×240 client
+rectangle, then repeats after restarting Wine. `--window` additionally exercises a
+visible GDI window. Relocated release validation requires the same checks; x86
+CPU testing remains optional unless `--require-x86` is selected.
+
+Changing from the old fontless recipe requires a fresh build workspace. Test with
+fresh prefixes: old prefixes may contain corrupt WindowMetrics and cached theme
+metrics. Preserve user prefixes and saves; resetting the registry alone cannot
+repair a runtime that still has no font backend.

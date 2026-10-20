@@ -6,6 +6,7 @@ mod common;
 mod configure;
 mod consumer;
 mod downloads;
+mod fonts;
 mod frontend;
 mod graphics;
 mod process;

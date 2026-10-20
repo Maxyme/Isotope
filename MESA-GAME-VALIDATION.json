@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "assembly": {
+    "mesa_revision": "e3d0c46f52479f16da810bfbccfbc123ec1674c0",
+    "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+    "driver_sha256": "82e46b5501d2df08612bccf3f59b1bee76d714e3e3b355896670a46119b94dea",
+    "working_driver_sha256": "1cd31de2e7d51792aba62ebececf001cca7c30b038f6e7b19d0968bb53cbdf40",
+    "dmc5_settings_before_sha256": "66eaae2c9280db9c73de8e7d245e9d09723230c9fc97322fddfa7a91175bbff3"
+  },
+  "runs": [
+    {
+      "label": "dirt-long-path",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-long-path/dirt-690790-20261020-201557-495329000.runner.json",
+      "status": "cancelled",
+      "exit_code": 0,
+      "primary_exit": null,
+      "timings": {
+        "preparation_ms": 41446,
+        "runtime_ms": 46260,
+        "cleanup_ms": 1585,
+        "total_ms": 89292
+      },
+      "engine": "Wine + DXVK (DX10-DX11) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-long-path/dirt-690790-20261020-201557-495329000.wine.log",
+      "gameplay_validation": "failed-visible-launch",
+      "user_observation": "No game window appears"
+    },
+    {
+      "label": "dirt-long-path",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-long-path/dirt-690790-20261020-201851-201083000.runner.json",
+      "status": "cancelled",
+      "exit_code": 0,
+      "primary_exit": null,
+      "timings": {
+        "preparation_ms": 5452,
+        "runtime_ms": 14594,
+        "cleanup_ms": 1836,
+        "total_ms": 21883
+      },
+      "engine": "Wine + DXVK (DX10-DX11) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-long-path/dirt-690790-20261020-201851-201083000.wine.log",
+      "gameplay_validation": "failed-visible-launch",
+      "user_observation": "No game window appears"
+    },
+    {
+      "label": "dirt-short-path",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-short-path/dirt-690790-20261020-201923-537353000.runner.json",
+      "status": "cancelled",
+      "exit_code": 0,
+      "primary_exit": null,
+      "timings": {
+        "preparation_ms": 37904,
+        "runtime_ms": 119673,
+        "cleanup_ms": 1565,
+        "total_ms": 159143
+      },
+      "engine": "Wine + DXVK (DX10-DX11) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dirt-short-path/dirt-690790-20261020-201923-537353000.wine.log",
+      "gameplay_validation": "failed-visible-launch",
+      "user_observation": "No game window appears"
+    },
+    {
+      "label": "dmc5-fullscreen",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-fullscreen/dmc5-601150-20261020-201737-100693000.runner.json",
+      "status": "exited",
+      "exit_code": 1,
+      "primary_exit": "exit status: 1",
+      "timings": {
+        "preparation_ms": 39368,
+        "runtime_ms": 24314,
+        "cleanup_ms": 1104,
+        "total_ms": 64787
+      },
+      "engine": "Wine + VKD3D-Proton (DX12) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-fullscreen/dmc5-601150-20261020-201737-100693000.wine.log",
+      "gameplay_validation": "not-confirmed"
+    },
+    {
+      "label": "dmc5-windowed",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-windowed/dmc5-601150-20261020-202208-922312000.runner.json",
+      "status": "exited",
+      "exit_code": 1,
+      "primary_exit": "exit status: 1",
+      "timings": {
+        "preparation_ms": 38345,
+        "runtime_ms": 20275,
+        "cleanup_ms": 1115,
+        "total_ms": 59736
+      },
+      "engine": "Wine + VKD3D-Proton (DX12) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/mesa-game-validation/runtime-e3d0c46f5247",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-windowed/dmc5-601150-20261020-202208-922312000.wine.log",
+      "gameplay_validation": "not-confirmed"
+    },
+    {
+      "label": "dmc5-previous-driver",
+      "receipt": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-previous-driver/dmc5-601150-20261020-202324-416353000.runner.json",
+      "status": "exited",
+      "exit_code": 1,
+      "primary_exit": "exit status: 1",
+      "timings": {
+        "preparation_ms": 41482,
+        "runtime_ms": 24786,
+        "cleanup_ms": 1099,
+        "total_ms": 67369
+      },
+      "engine": "Wine + VKD3D-Proton (DX12) + Mesa KosmicKrisp Vulkan",
+      "runtime": "/Users/maximejacques/code/isotope/target/upstream-game-runtime",
+      "wine_log": "/Users/maximejacques/code/isotope/target/mesa-game-validation/evidence/dmc5-previous-driver/dmc5-601150-20261020-202324-416353000.wine.log",
+      "gameplay_validation": "not-confirmed"
+    }
+  ],
+  "dmc5_settings_after_sha256": "66eaae2c9280db9c73de8e7d245e9d09723230c9fc97322fddfa7a91175bbff3",
+  "dmc5_settings_restored": true,
+  "working_driver_unchanged": true,
+  "dirt_cache_files": [
+    {
+      "name": "80455e2073b92282.dxvk.lut",
+      "bytes": 176949
+    },
+    {
+      "name": "80455e2073b92282.dxvk.bin",
+      "bytes": 9419227
+    }
+  ],
+  "confirmation": "User confirmed no DiRT game window appeared on either initial launch or short-path retry. DiRT failed visible launch validation; process/cache activity is not a pass.",
+  "nucleon_change": "Runtime validator accepts exact MESA_KK_EXPERIMENTAL=image_view_min_lod only for bundled KosmicKrisp; 10 focused tests and strict core Clippy pass"
+}
