@@ -26,8 +26,13 @@ Both games were tested with fresh isolated prefixes and the repaired Wine core, 
 - DiRT Rally 2.0 / DX11: completed a 180-second bounded launch, retained its game process, generated shader cache through a 93-character Wine path, and had no logged Metal assertion or `VK_ERROR`. Its persisted caption/menu metrics are sane. The former long-cache-path crash did not recur.
 - DMC5 / DX12: completed a 240-second bounded launch and creates a normal 1518×962 swapchain. The previous 32859×2 request and Metal size assertion did not recur. VKD3D still warns that `VK_EXT_dynamic_rendering_unused_attachments` is missing; this remains a graphics compatibility limitation.
 
-The user confirmed **no game window appeared for either repaired-runtime run**. Both games therefore fail visible launch validation. Menu, input, driving and combat were not reached. A live process, shader cache, normal swapchain or bounded exit zero is not a gameplay pass. The font/geometry and cache fixes remain verified independently; native window visibility/activation needs further investigation.
+The user clarified they **were not watching the bounded runs**. Those initial no-window responses therefore do not establish a visibility failure. Both games were rerun without automatic timeouts using the same runtime and isolated prefixes. The user confirmed **“Menu appears and responds to input” for each game**.
+
+- DiRT / DX11: live run `20261020T235611.742638000Z-73667-0`; menu/input confirmed, normal exit zero after 32.3 seconds of game runtime.
+- DMC5 / DX12: live run `20261020T235704.492242000Z-74261-0`; menu/input confirmed, normal 1518×962 swapchain, normal exit zero after 60.5 seconds of game runtime.
+
+Neither live run logged a Metal assertion or `VK_ERROR`. Both exited before a stop signal was needed. Menu/input validation passes; driving, combat, sustained performance and full graphics correctness remain untested. The missing VKD3D extension remains a compatibility limitation.
 
 DMC5 settings were restored byte-for-byte. The previous runtime driver is unchanged. User prefixes/saves were preserved; only isolated test prefixes were regenerated. Full receipts, hashes and paths are recorded in FONT-VALIDATION.json. Logs remain under target/font-validation/.
 
-Follow-up: the runs automatically closed after 180/240 seconds. Confirmation of whether the user watched during those intervals is pending. Native UI inspection also fails for Steam with ScreenCaptureKit error -3811, so the capture-tool failure itself is not specific evidence about Wine window registration.
+Native UI inspection also fails for Steam with ScreenCaptureKit error -3811. This capture-tool failure is not specific evidence about Wine window registration; live visibility and input were confirmed by the user. The earlier bounded receipts remain in FONT-VALIDATION.json alongside the live-run receipts.

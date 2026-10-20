@@ -204,3 +204,8 @@ Changing from the old fontless recipe requires a fresh build workspace. Test wit
 fresh prefixes: old prefixes may contain corrupt WindowMetrics and cached theme
 metrics. Preserve user prefixes and saves; resetting the registry alone cannot
 repair a runtime that still has no font backend.
+
+The font-enabled runtime and pinned Mesa fork pass live Nucleon menu/input checks
+for DiRT Rally 2.0 (DX11/DXVK) and DMC5 (DX12/VKD3D), confirmed by the user.
+Driving and combat remain untested. See [FONT-VALIDATION.md](FONT-VALIDATION.md)
+for runtime hashes, checks and remaining graphics limitations.

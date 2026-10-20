@@ -60,6 +60,74 @@
   },
   "game_runs": {
     "dirt": {
+      "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/dx12/logs/dirt-690790-20261020-235609-885205000.runner.json",
+      "status": "exited",
+      "exit_code": 0,
+      "timings": {
+        "preparation_ms": 5645,
+        "runtime_ms": 32300,
+        "cleanup_ms": 1101,
+        "total_ms": 39047
+      },
+      "engine": "Wine + DXVK (DX10-DX11) + Mesa KosmicKrisp Vulkan",
+      "cache_paths": {
+        "DXVK_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\0fcf7af9cf544a34a324e16bcace33c0a8866cb95dea5566f17a9b359d4965fe\\dxvk",
+        "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/integrated-compatdata/690790/nucleon/shader-cache/v1/690790/arm64-fex/isotope-fonts-abi1/x64/dxvk/a432ca37175ac46cce1f44cef8c40ff8fdc93a02594b10d2405141a0617aa541/mesa"
+      },
+      "bounded": false,
+      "gameplay_validation": "MENU_INPUT_USER_CONFIRMED",
+      "user_observation": "Menu appears and responds to input",
+      "driving_or_combat": "NOT_TESTED",
+      "metal_assertion": false,
+      "vulkan_errors": false,
+      "swapchains": [],
+      "missing_dynamic_unused_attachments": false,
+      "settings_restored": true
+    },
+    "dmc5": {
+      "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/dx12/logs/dmc5-601150-20261020-235702-607683000.runner.json",
+      "status": "exited",
+      "exit_code": 0,
+      "timings": {
+        "preparation_ms": 5524,
+        "runtime_ms": 60453,
+        "cleanup_ms": 1133,
+        "total_ms": 67110
+      },
+      "engine": "Wine + VKD3D-Proton (DX12) + Mesa KosmicKrisp Vulkan",
+      "cache_paths": {
+        "DXVK_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\80ee6610f0bf79090992ee5773360fe97bf8f782b7854ee4c6cb483eae7a9a0f\\dxvk",
+        "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/integrated-compatdata/601150/nucleon/shader-cache/v1/601150/arm64-fex/isotope-fonts-abi1/x64/vkd3d/29d60b034d39906b98f27a7663a6f96a78408c4cac3b3863cc90144fefb81b1a/mesa",
+        "VKD3D_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\80ee6610f0bf79090992ee5773360fe97bf8f782b7854ee4c6cb483eae7a9a0f\\vkd3d"
+      },
+      "bounded": false,
+      "gameplay_validation": "MENU_INPUT_USER_CONFIRMED",
+      "user_observation": "Menu appears and responds to input",
+      "driving_or_combat": "NOT_TESTED",
+      "metal_assertion": false,
+      "vulkan_errors": false,
+      "swapchains": [
+        "1518 x 962"
+      ],
+      "missing_dynamic_unused_attachments": true,
+      "settings_restored": true
+    }
+  },
+  "dmc5_settings_restored": true,
+  "previous_driver_unchanged": true,
+  "nucleon_committed": false,
+  "notes": [
+    "Isolated game prefixes used; user prefixes and saves preserved.",
+    "Earlier bounded runs establish process and graphics evidence only; the user was not watching them.",
+    "Live reruns without automatic timeouts confirmed menu and input for both games.",
+    "Both live reruns exited normally with code zero; no stop signal was needed.",
+    "Driving, combat, sustained performance and full graphics correctness remain untested.",
+    "No release published or repository pushed; Nucleon remains uncommitted."
+  ],
+  "observation_timing_clarification": "User was not watching the bounded runs. Both games rerun without automatic timeouts; user confirmed menu and input for each.",
+  "native_ui_inspection": "ScreenCaptureKit error -3811 also prevents attaching to the running native Steam instance; UI capture failure is not specific evidence against Wine.",
+  "bounded_game_runs": {
+    "dirt": {
       "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/dx12/logs/dirt-690790-20261020-221726-439079000.runner.json",
       "status": "bounded",
       "exit_code": 0,
@@ -74,12 +142,12 @@
         "DXVK_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\0fcf7af9cf544a34a324e16bcace33c0a8866cb95dea5566f17a9b359d4965fe\\dxvk",
         "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dirt/integrated-compatdata/690790/nucleon/shader-cache/v1/690790/arm64-fex/isotope-fonts-abi1/x64/dxvk/a432ca37175ac46cce1f44cef8c40ff8fdc93a02594b10d2405141a0617aa541/mesa"
       },
-      "gameplay_validation": "FAILED_VISIBLE_LAUNCH",
+      "gameplay_validation": "NOT_OBSERVED_DURING_RUN",
       "metal_assertion": false,
       "vulkan_errors": false,
       "swapchains": [],
       "missing_dynamic_unused_attachments": false,
-      "user_observation": "No game window appears"
+      "user_observation": "Initial no-window response superseded: user clarified they were not watching the bounded runs."
     },
     "dmc5": {
       "receipt": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/dx12/logs/dmc5-601150-20261020-222129-312818000.runner.json",
@@ -97,25 +165,15 @@
         "MESA_SHADER_CACHE_DIR": "/Users/maximejacques/code/isotope/target/font-validation/nucleon-dmc5/integrated-compatdata/601150/nucleon/shader-cache/v1/601150/arm64-fex/isotope-fonts-abi1/x64/vkd3d/29d60b034d39906b98f27a7663a6f96a78408c4cac3b3863cc90144fefb81b1a/mesa",
         "VKD3D_SHADER_CACHE_PATH": "C:\\nucleon-shader-cache\\80ee6610f0bf79090992ee5773360fe97bf8f782b7854ee4c6cb483eae7a9a0f\\vkd3d"
       },
-      "gameplay_validation": "FAILED_VISIBLE_LAUNCH",
+      "gameplay_validation": "NOT_OBSERVED_DURING_RUN",
       "metal_assertion": false,
       "vulkan_errors": false,
       "swapchains": [
         "1518 x 962"
       ],
       "missing_dynamic_unused_attachments": true,
-      "user_observation": "No game window appears"
+      "user_observation": "Initial no-window response superseded: user clarified they were not watching the bounded runs."
     }
   },
-  "dmc5_settings_restored": true,
-  "previous_driver_unchanged": true,
-  "nucleon_committed": false,
-  "notes": [
-    "Fresh game prefixes used; user prefixes and saves preserved.",
-    "Previous user reports of missing windows refer to pre-fix runs.",
-    "No release published or repository pushed.",
-    "User confirmed no game window appeared in either repaired-runtime run; bounded process execution is not a visible launch pass."
-  ],
-  "observation_timing_clarification": "Asked whether the desktop was watched during the bounded runs; answer pending.",
-  "native_ui_inspection": "ScreenCaptureKit error -3811 also prevents attaching to the running native Steam instance; UI capture failure is not specific evidence against Wine."
+  "dmc5_settings_sha256": "66eaae2c9280db9c73de8e7d245e9d09723230c9fc97322fddfa7a91175bbff3"
 }
