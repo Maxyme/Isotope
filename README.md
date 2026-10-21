@@ -69,6 +69,49 @@ Reference-app imports are local diagnostics. Fetch them explicitly with
 require an explicitly supplied `NUCLEON_PROBE_D3DCOMPILER`. Steam and game launch
 helpers live in Nucleon's devtools.
 
+## Runtime diagnostics and lifecycle
+
+The optional regressions run small owned workloads without Steam or installed
+games. Each command keeps separate logs and a `result.json` in its workspace:
+
+```sh
+isotope fex probe-graphics --work target/arm64-fex
+isotope fex probe-supervision --work target/arm64-fex
+isotope fex probe-dll-search --work target/arm64-fex
+isotope fex probe-vulkan --work target/probes --runtime /path/to/graphics-runtime
+```
+
+`--runtime` tests an existing installation instead of the workspace's built core.
+Vulkan additionally needs a descriptor naming its driver and loader, and accepts
+`--sdk`. These graphics regressions are separate from the release CPU gate. WGL
+checks legacy/core/shared contexts, readback and presentation. Direct3D and Vulkan
+check a cleared frame through GPU readback and a swapchain present; they do not
+certify game compatibility. The Vulkan probe can also diagnose the x86 Wine bridge
+in an isolated graphics runtime; it does not enable x86 ARM64EC frontend pairing.
+
+`ISOTOPE_FAULT_DIAGNOSTICS=1` emits a bounded native syscall-fault record with host
+registers, fault address, guest address window and return address. Formatting uses
+no allocation or symbol lookup in the signal handler. Nucleon enables it for
+explicit diagnostic launches; ordinary launches leave it disabled.
+
+Consumers can set `ISOTOPE_SUPERVISOR_PID` to their own PID. A native thread inside
+each Wine process, and the newly started wineserver, waits for that owner's exit
+through macOS process notifications. It terminates only itself if the owner dies,
+including SIGKILL. An absent variable leaves normal Wine lifetime behavior intact;
+invalid settings or failed registration stop startup. Consumers should retain their
+normal prefix/process cleanup. The supervision regression kills a dedicated owner
+after a guest and its Windows child are ready, waits for prefix shutdown and checks
+that an unrelated control process survives. A separate phase starts an unsupervised
+server and observer, proving that both guests exit through their own watchers.
+
+`WINEDLLPATH_PREPEND` searches external Wine-built DLL directories before the
+runtime's own builtins. Empty entries are ignored. Wine's rejection of non-builtin
+DLLs remains in place: DXVK and VKD3D still require native DLL staging. Nucleon detects
+the versioned native ntdll capabilities before selecting search-based DXMT loading
+or guest supervision, retaining its existing path for older runtimes. The DLL probe
+checks both guest architectures and verifies the selected image, including the
+native-DLL rejection case.
+
 ## Package and install
 
 Core releases validate the relocated archive independently: file hashes,

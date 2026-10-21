@@ -58,6 +58,7 @@ fn clean_environment_from(vars: impl Iterator<Item = (OsString, OsString)>) -> E
             "DYLD_",
             "FEX_",
             "MACRUNNER_",
+            "ISOTOPE_",
             "NUCLEON_",
             "VKD3D_",
             "DXVK_",
@@ -490,6 +491,8 @@ mod tests {
                 ("VK_DRIVER_FILES", "stale"),
                 ("DYLD_LIBRARY_PATH", "other"),
                 ("FEX_TSOENABLED", "0"),
+                ("ISOTOPE_SUPERVISOR_PID", "123"),
+                ("ISOTOPE_FAULT_DIAGNOSTICS", "1"),
             ]
             .into_iter()
             .map(|(k, v)| (k.into(), v.into())),

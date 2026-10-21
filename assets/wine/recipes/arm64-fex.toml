@@ -40,6 +40,7 @@ configure = [
 patches = [
     "assets/patches/wine-upstream-darwin.patch",
     "assets/patches/wine-upstream-integration.patch",
+    "assets/patches/wine-runtime-tools.patch",
 ]
 shared_data_helper = "dlls/ntdll/unix/macrunner_fex_kusd.h"
 shared_data_helper_sha256 = "8e7d75d18572a01b37bfdbe6322e375f07d7920a460b76176f07cd4cdcca36a1"

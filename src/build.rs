@@ -496,6 +496,17 @@ impl Build {
                 "Wine must use the Khronos Vulkan loader"
             );
         }
+        // -W forces the private-rpath relink below, but treats its argument as
+        // already built. Materialize the object first on a fresh workspace.
+        run(
+            "make",
+            &["tools/sfnt2fon/sfnt2fon.o".into()],
+            Some(&env),
+            Some(&build),
+            Some(&self.logs.join("font-tool-object-build.log")),
+            120,
+            0,
+        )?;
         // The system shell strips DYLD_*; only this build tool needs a private build rpath.
         run(
             "make",
