@@ -71,13 +71,14 @@ helpers live in Nucleon's devtools.
 
 ## Package and install
 
-Package validation invokes Nucleon's public CLI. Supply `--nucleon /path/to/nucleon`
-or `ISOTOPE_NUCLEON`; otherwise `nucleon` is resolved from PATH. The executable must
-support `wine install` and schema-1 `wine inspect --json`. Fetching and component
-builds do not require Nucleon; runtime assembly and release validation do.
+Core releases validate the relocated archive independently: file hashes,
+permissions, symlinks, native dependencies, CPU execution, fonts and cleanup.
+Nucleon managed import is recorded as `NOT_RUN` and checked separately after
+publication. Experimental graphics assembly still accepts `--nucleon` or
+`ISOTOPE_NUCLEON` for optional consumer inspection.
 
 ```sh
-target/release/isotope --nucleon /path/to/nucleon release build \
+target/release/isotope release build \
   --version 0.1.0-rc.1 --work target/runtime-release \
   --output target/release-assets
 ```
@@ -103,11 +104,12 @@ Nucleon also accepts a runtime directory or archive URL. The named source resolv
 the exact `v<version>` release in `Maxyme/isotope` and verifies its checksum.
 Registration selects the experimental FEX runtime without changing Intel Wine.
 
-The [release workflow](.github/workflows/release.yml) requires a full
-Nucleon commit via manual input `nucleon_ref` or repository variable
-`NUCLEON_VALIDATOR_REVISION`. Use a pushed commit containing the required consumer
-CLI. Manual dispatch retains CI artifacts; `v*` tags publish prereleases after
-validation.
+The [release workflow](.github/workflows/release.yml) builds and validates Isotope
+without a Nucleon checkout or executable. Portable Rust checks and release
+publishing run on `ubuntu-26.04-arm`; native runtime builds and probes run on
+`macos-latest`. Manual dispatch retains CI artifacts; `v*` tags publish prereleases
+after standalone validation. Nucleon's separate manual integration workflow can
+verify a published Isotope version afterward.
 
 ## Licenses
 
