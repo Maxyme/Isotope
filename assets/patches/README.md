@@ -8,6 +8,10 @@ FEX-2610 (`14c92681f4d62cf84d901460e0358de09c8847a7`).
   alias and cursor registry compatibility. Uses upstream Wine syscall wrappers.
 - `wine-upstream-integration.patch`: shared-page initialization in the PE loader,
   the existing opt-in Steam export redirection, and the DXMT window ABI adapter.
+- `wine-runtime-tools.patch`: optional signal-safe native fault records,
+  builtin DLL search precedence and per-process macOS launcher supervision.
+  Versioned ntdll exports allow consumers to detect these extensions without
+  changing the runtime descriptor schema. No Voile runtime code is incorporated.
 - `fex-upstream-darwin.patch`: TSD TEB access, 32-bit guest-window translation,
   16 KB host guards and the native Unix companion. Applied before either FEX
   emulator is compiled, not just when building the companion.

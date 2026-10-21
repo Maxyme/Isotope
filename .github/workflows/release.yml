@@ -11,10 +11,6 @@ on:
         required: true
         type: string
 
-      nucleon_ref:
-        description: 'Full Nucleon commit containing wine install/inspect'
-        required: true
-        type: string
       require_x86:
         description: 'Require the 32-bit workload to pass'
         default: false
@@ -38,21 +34,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: stable
-      - name: Check pinned consumer revision
-        env:
-          CONSUMER_REF: ${{ inputs.nucleon_ref || vars.NUCLEON_VALIDATOR_REVISION }}
-        run: |
-          test "${#CONSUMER_REF}" = 40
-          case "$CONSUMER_REF" in *[!0-9a-fA-F]*) exit 1;; esac
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: Maxyme/Nucleon
-          ref: ${{ inputs.nucleon_ref || vars.NUCLEON_VALIDATOR_REVISION }}
-          path: _consumer
-          persist-credentials: false
-      - name: Build pinned Nucleon consumer
-        working-directory: _consumer
-        run: cargo build --release --locked -p nucleon-cli
       - name: Install publisher build tools
         run: |
           test "$(uname -m)" = arm64
@@ -64,14 +45,14 @@ jobs:
         run: cargo test --locked
       - name: Build the Rust publisher
         run: cargo build --release --locked
-      - name: Compile, package and validate the installed runtime
+      - name: Compile, package and validate the relocated runtime
         env:
           REQUESTED_VERSION: ${{ inputs.version || github.ref_name }}
           REQUIRE_X86: ${{ inputs.require_x86 || false }}
         run: |
           x86_args=()
           if test "$REQUIRE_X86" = true; then x86_args+=(--require-x86); fi
-          target/release/isotope --nucleon "$PWD/_consumer/target/release/nucleon" release build \
+          target/release/isotope release build \
             --version "${REQUESTED_VERSION#v}" \
             --work target/runtime-release \
             --output target/runtime-release-assets \

@@ -1,0 +1,228 @@
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 3ad9441..0942e83 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -292,15 +292,26 @@ static WORD get_alt_machine( WORD machine )
+     }
+ }
+ 
++/* Versioned native capabilities, read without loading the library by consumers. */
++__attribute__((visibility("default"))) const unsigned int isotope_dll_search_prepend_v1 = 1;
++__attribute__((visibility("default"))) const unsigned int isotope_guest_supervisor_v1 = 1;
++
+ static void set_dll_path(void)
+ {
+-    char *p, *path = getenv( "WINEDLLPATH" );
++    char *p, *path = getenv( "WINEDLLPATH" ), *prepend = getenv( "WINEDLLPATH_PREPEND" );
+     int i, count = 0;
+ 
+-    if (path) for (p = path, count = 1; *p; p++) if (*p == ':') count++;
++    if (path && *path) for (p = path, count++; *p; p++) if (*p == ':') count++;
++    if (prepend && *prepend) for (p = prepend, count++; *p; p++) if (*p == ':') count++;
+ 
+     dll_paths = malloc( (count + 2) * sizeof(*dll_paths) );
+     count = 0;
++    if (prepend && *prepend)
++    {
++        prepend = strdup(prepend);
++        for (p = strtok( prepend, ":" ); p; p = strtok( NULL, ":" )) dll_paths[count++] = strdup( p );
++        free( prepend );
++    }
+ 
+     if (!build_dir) dll_paths[count++] = dll_dir;
+ 
+diff --git a/dlls/ntdll/unix/signal_arm64.c b/dlls/ntdll/unix/signal_arm64.c
+index 8fda001..b236dcb 100644
+--- a/dlls/ntdll/unix/signal_arm64.c
++++ b/dlls/ntdll/unix/signal_arm64.c
+@@ -69,6 +69,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(seh);
+ 
+ #define NTDLL_DWARF_H_NO_UNWINDER
+ #include "dwarf.h"
++#ifdef __APPLE__
++# include "wine/isotope_supervisor.h"
++#endif
+ 
+ struct arm64_thread_data
+ {
+@@ -1127,12 +1130,55 @@ NTSTATUS WINAPI NtCallbackReturn( void *ret_ptr, ULONG ret_len, NTSTATUS status
+  *
+  * Handle a page fault happening during a system call.
+  */
++/* Signal-safe, opt-in native syscall fault record. Avoid allocation, symbol
++ * lookup and stdio while handling a fault; symbolize PC/LR from the module log. */
++static int isotope_fault_diagnostics;
++extern char *wow64_window;
++
++static char *isotope_fault_hex( char *out, const char *label, ULONG_PTR value )
++{
++    unsigned int i;
++    while (*label) *out++ = *label++;
++    for (i = 0; i < sizeof(value) * 2; i++)
++        *out++ = "0123456789abcdef"[(value >> ((sizeof(value) * 2 - i - 1) * 4)) & 15];
++    return out;
++}
++
++static void isotope_fault_record( struct thread_data *data, ucontext_t *context, EXCEPTION_RECORD *rec )
++{
++    char line[768], *out = line;
++    struct syscall_frame *frame = get_syscall_frame( data );
++    ULONG_PTR fault = rec->NumberParameters > 1 ? rec->ExceptionInformation[1] : 0;
++    ULONG_PTR base = (ULONG_PTR)wow64_window;
++    unsigned int i;
++    if (!isotope_fault_diagnostics) return;
++    out = isotope_fault_hex( out, "ISOTOPE_NATIVE_FAULT code=", rec->ExceptionCode );
++    out = isotope_fault_hex( out, " pc=", PC_sig(context) );
++    out = isotope_fault_hex( out, " lr=", LR_sig(context) );
++    out = isotope_fault_hex( out, " sp=", SP_sig(context) );
++    out = isotope_fault_hex( out, " fault=", fault );
++    out = isotope_fault_hex( out, " guest_window=", base );
++    out = isotope_fault_hex( out, " guest_fault=", base && fault >= base && fault - base <= UINT32_MAX ? fault - base : ~(ULONG_PTR)0 );
++    out = isotope_fault_hex( out, " low_guest_pointer=", base && fault && fault <= UINT32_MAX );
++    out = isotope_fault_hex( out, " guest_return=", frame ? frame->pc : 0 );
++    for (i = 0; i < 8; i++)
++    {
++        char label[] = " x0=";
++        label[2] += i;
++        out = isotope_fault_hex( out, label, REGn_sig(i, context) );
++    }
++    *out++ = '\n';
++    /* One bounded write preserves a usable record even if the process dies. */
++    write( STDERR_FILENO, line, out - line );
++}
++
+ static BOOL handle_syscall_fault( struct thread_data *data, ucontext_t *context, EXCEPTION_RECORD *rec )
+ {
+     struct syscall_frame *frame;
+     DWORD i;
+ 
+     if (!is_inside_syscall( data, SP_sig(context) )) return FALSE;
++    isotope_fault_record( data, context, rec );
+ 
+     TRACE( "code=%x flags=%x addr=%p pc=%p\n",
+            rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress, (void *)PC_sig(context) );
+@@ -1689,7 +1735,9 @@ void signal_free_thread( TEB *teb )
+ void signal_init_process( TEB *teb )
+ {
+     struct sigaction sig_act;
++    const char *diagnostics = getenv("ISOTOPE_FAULT_DIAGNOSTICS");
+ 
++    isotope_fault_diagnostics = diagnostics && !strcmp(diagnostics, "1");
+     alloc_syscall_frame( sizeof(struct syscall_frame) );
+     signal_alloc_thread( teb );
+ 
+@@ -1715,6 +1763,9 @@ void signal_init_process( TEB *teb )
+     if (sigaction( SIGSEGV, &sig_act, NULL ) == -1) goto error;
+     sig_act.sa_sigaction = ill_handler;
+     if (sigaction( SIGILL, &sig_act, NULL ) == -1) goto error;
++#ifdef __APPLE__
++    isotope_supervisor_init();
++#endif
+     return;
+ 
+  error:
+diff --git a/include/Makefile.in b/include/Makefile.in
+index 3f23c63..74715e0 100644
+--- a/include/Makefile.in
++++ b/include/Makefile.in
+@@ -1148,6 +1148,7 @@ SOURCES = \
+ 	wine/strmbase.h \
+ 	wine/svcctl.idl \
+ 	wine/test.h \
++	wine/isotope_supervisor.h \
+ 	wine/unixlib.h \
+ 	wine/vulkan.h \
+ 	wine/vulkan_driver.h \
+diff --git a/include/wine/isotope_supervisor.h b/include/wine/isotope_supervisor.h
+new file mode 100644
+index 0000000..9518056
+--- /dev/null
++++ b/include/wine/isotope_supervisor.h
+@@ -0,0 +1,66 @@
++/* Optional launcher-lifetime backstop for Isotope. LGPL-2.1-or-later. */
++#ifndef WINE_ISOTOPE_SUPERVISOR_H
++#define WINE_ISOTOPE_SUPERVISOR_H
++#ifdef __APPLE__
++#include <sys/event.h>
++#include <sys/types.h>
++#include <pthread.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <limits.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++
++static void *isotope_supervisor_wait( void *arg )
++{
++    int fd = (int)(intptr_t)arg, count;
++    struct kevent event;
++    do count = kevent( fd, NULL, 0, &event, 1, NULL ); while (count < 0 && errno == EINTR);
++    close( fd );
++    /* Only terminate this process; the kernel binds the event to the registered
++     * process, so a recycled PID cannot identify an unrelated launcher. */
++    if (count == 1 && event.filter == EVFILT_PROC && (event.fflags & NOTE_EXIT)) _exit(137);
++    if (count != 1) _exit(125);
++    return NULL;
++}
++
++static void isotope_supervisor_init(void)
++{
++    const char *value = getenv("ISOTOPE_SUPERVISOR_PID");
++    char *end;
++    long pid;
++    int fd, error;
++    pthread_t thread;
++    struct kevent event;
++    if (!value || !*value) return;
++    errno = 0;
++    pid = strtol( value, &end, 10 );
++    if (errno || *end || pid <= 1 || pid > INT_MAX || pid == getpid())
++    {
++        fputs("isotope: invalid ISOTOPE_SUPERVISOR_PID\n", stderr);
++        _exit(125);
++    }
++    if ((fd = kqueue()) == -1 || fcntl( fd, F_SETFD, FD_CLOEXEC ) == -1) goto failed;
++    EV_SET( &event, pid, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_ONESHOT, NOTE_EXIT, 0, NULL );
++    if (kevent( fd, &event, 1, NULL, 0, NULL ) == -1)
++    {
++        if (errno == ESRCH) _exit(137); /* owner exited before registration */
++        goto failed;
++    }
++    if ((error = pthread_create( &thread, NULL, isotope_supervisor_wait, (void *)(intptr_t)fd )))
++    {
++        errno = error;
++        goto failed;
++    }
++    pthread_detach( thread );
++    return;
++failed:
++    perror("isotope: supervisor registration");
++    _exit(125);
++}
++#else
++static void isotope_supervisor_init(void) {}
++#endif
++#endif
+diff --git a/server/main.c b/server/main.c
+index 46419a0..8b9553b 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -40,6 +40,7 @@
+ #include "thread.h"
+ #include "request.h"
+ #include "unicode.h"
++#include "wine/isotope_supervisor.h"
+ 
+ /* command-line options */
+ int debug_level = 0;
+@@ -258,6 +259,8 @@ int main( int argc, char *argv[] )
+ 
+     sock_init();
+     open_master_socket();
++    /* Register after daemonization: only the final server owns this thread. */
++    isotope_supervisor_init();
+ 
+     if (debug_level) fprintf( stderr, "wineserver: starting (pid=%ld)\n", (long) getpid() );
+     set_current_time();

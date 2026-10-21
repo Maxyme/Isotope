@@ -13,6 +13,7 @@ mod package_validation;
 mod process;
 mod receipts;
 mod release;
+mod runtime_tools;
 static REQUIRE_X86: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static NUCLEON: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
@@ -60,6 +61,14 @@ enum FexAction {
     ProbeDxmt,
     CheckReference,
     ProbeUnixlib,
+    /// Compare x86/x64 WGL and Direct3D readback/presentation
+    ProbeGraphics,
+    /// Kill a dedicated launcher and verify its guest process tree exits
+    ProbeSupervision,
+    /// Verify builtin backend search precedence and rejection of native DLLs
+    ProbeDllSearch,
+    /// Compare x86/x64 Vulkan swapchain, readback and presentation
+    ProbeVulkan,
 }
 #[derive(Args)]
 struct FexArgs {
@@ -73,6 +82,11 @@ struct FexArgs {
     window: bool,
     #[arg(long)]
     library: Option<PathBuf>,
+    /// Test an existing runtime instead of the workspace build
+    #[arg(long)]
+    runtime: Option<PathBuf>,
+    #[arg(long)]
+    sdk: Option<PathBuf>,
 }
 #[derive(Clone, Copy, ValueEnum)]
 enum ReleaseAction {
@@ -200,6 +214,22 @@ fn main() -> Result<()> {
                     graphics.probe("dxmt")
                 }
                 FexAction::CheckReference => build.check_reference(),
+                FexAction::ProbeGraphics => {
+                    common::require_native()?;
+                    runtime_tools::graphics(&build, args.runtime.as_deref())
+                }
+                FexAction::ProbeVulkan => {
+                    common::require_native()?;
+                    runtime_tools::vulkan(&build, args.runtime.as_deref(), args.sdk.as_deref())
+                }
+                FexAction::ProbeDllSearch => {
+                    common::require_native()?;
+                    runtime_tools::dll_search(&build, args.runtime.as_deref())
+                }
+                FexAction::ProbeSupervision => {
+                    common::require_native()?;
+                    runtime_tools::supervision(&build, args.runtime.as_deref())
+                }
                 FexAction::ProbeUnixlib => {
                     common::require_native()?;
                     build.probe_unixlib(args.library.as_deref())

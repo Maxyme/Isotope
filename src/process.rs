@@ -36,6 +36,14 @@ impl OwnedChild {
         rustix::process::Pid::from_raw(raw).expect("Child PID is nonzero")
     }
 
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub fn kill(&mut self) -> Result<()> {
+        self.child.kill().context("Could not kill owned launcher")
+    }
+
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>> {
         if self.reaped {
             return Ok(self.child.try_wait()?);

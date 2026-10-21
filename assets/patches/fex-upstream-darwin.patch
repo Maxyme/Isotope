@@ -1143,7 +1143,8 @@ index 8adef59..f0aa908 100644
  
  static NTSTATUS FEXUnixLib_SetVMANameHandler(void* _Args) {
 @@ -79,7 +93,7 @@ static NTSTATUS FEXUnixLib_SetVMANameHandler(void* _Args) {
- constexpr static int USER_PERMS = S_IRWXU | S_IRWXG | S_IRWXO;
+-constexpr static int USER_PERMS = S_IRWXU | S_IRWXG | S_IRWXO;
++constexpr static int USER_PERMS = S_IRUSR | S_IWUSR;
  static inline void* InitializeSHM(uint32_t MapSize, uint32_t MaxSize) {
    void* Base {};
 -  const std::string Name = "fex-" + std::to_string(getpid()) + "-stats";

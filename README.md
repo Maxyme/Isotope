@@ -69,15 +69,59 @@ Reference-app imports are local diagnostics. Fetch them explicitly with
 require an explicitly supplied `NUCLEON_PROBE_D3DCOMPILER`. Steam and game launch
 helpers live in Nucleon's devtools.
 
-## Package and install
+## Runtime diagnostics and lifecycle
 
-Package validation invokes Nucleon's public CLI. Supply `--nucleon /path/to/nucleon`
-or `ISOTOPE_NUCLEON`; otherwise `nucleon` is resolved from PATH. The executable must
-support `wine install` and schema-1 `wine inspect --json`. Fetching and component
-builds do not require Nucleon; runtime assembly and release validation do.
+The optional regressions run small owned workloads without Steam or installed
+games. Each command keeps separate logs and a `result.json` in its workspace:
 
 ```sh
-target/release/isotope --nucleon /path/to/nucleon release build \
+isotope fex probe-graphics --work target/arm64-fex
+isotope fex probe-supervision --work target/arm64-fex
+isotope fex probe-dll-search --work target/arm64-fex
+isotope fex probe-vulkan --work target/probes --runtime /path/to/graphics-runtime
+```
+
+`--runtime` tests an existing installation instead of the workspace's built core.
+Vulkan additionally needs a descriptor naming its driver and loader, and accepts
+`--sdk`. These graphics regressions are separate from the release CPU gate. WGL
+checks legacy/core/shared contexts, readback and presentation. Direct3D and Vulkan
+check a cleared frame through GPU readback and a swapchain present; they do not
+certify game compatibility. The Vulkan probe can also diagnose the x86 Wine bridge
+in an isolated graphics runtime; it does not enable x86 ARM64EC frontend pairing.
+
+`ISOTOPE_FAULT_DIAGNOSTICS=1` emits a bounded native syscall-fault record with host
+registers, fault address, guest address window and return address. Formatting uses
+no allocation or symbol lookup in the signal handler. Nucleon enables it for
+explicit diagnostic launches; ordinary launches leave it disabled.
+
+Consumers can set `ISOTOPE_SUPERVISOR_PID` to their own PID. A native thread inside
+each Wine process, and the newly started wineserver, waits for that owner's exit
+through macOS process notifications. It terminates only itself if the owner dies,
+including SIGKILL. An absent variable leaves normal Wine lifetime behavior intact;
+invalid settings or failed registration stop startup. Consumers should retain their
+normal prefix/process cleanup. The supervision regression kills a dedicated owner
+after a guest and its Windows child are ready, waits for prefix shutdown and checks
+that an unrelated control process survives. A separate phase starts an unsupervised
+server and observer, proving that both guests exit through their own watchers.
+
+`WINEDLLPATH_PREPEND` searches external Wine-built DLL directories before the
+runtime's own builtins. Empty entries are ignored. Wine's rejection of non-builtin
+DLLs remains in place: DXVK and VKD3D still require native DLL staging. Nucleon detects
+the versioned native ntdll capabilities before selecting search-based DXMT loading
+or guest supervision, retaining its existing path for older runtimes. The DLL probe
+checks both guest architectures and verifies the selected image, including the
+native-DLL rejection case.
+
+## Package and install
+
+Core releases validate the relocated archive independently: file hashes,
+permissions, symlinks, native dependencies, CPU execution, fonts and cleanup.
+Nucleon managed import is recorded as `NOT_RUN` and checked separately after
+publication. Experimental graphics assembly still accepts `--nucleon` or
+`ISOTOPE_NUCLEON` for optional consumer inspection.
+
+```sh
+target/release/isotope release build \
   --version 0.1.0-rc.1 --work target/runtime-release \
   --output target/release-assets
 ```
@@ -103,11 +147,12 @@ Nucleon also accepts a runtime directory or archive URL. The named source resolv
 the exact `v<version>` release in `Maxyme/isotope` and verifies its checksum.
 Registration selects the experimental FEX runtime without changing Intel Wine.
 
-The [release workflow](.github/workflows/release.yml) requires a full
-Nucleon commit via manual input `nucleon_ref` or repository variable
-`NUCLEON_VALIDATOR_REVISION`. Use a pushed commit containing the required consumer
-CLI. Manual dispatch retains CI artifacts; `v*` tags publish prereleases after
-validation.
+The [release workflow](.github/workflows/release.yml) builds and validates Isotope
+without a Nucleon checkout or executable. Portable Rust checks and release
+publishing run on `ubuntu-26.04-arm`; native runtime builds and probes run on
+`macos-latest`. Manual dispatch retains CI artifacts; `v*` tags publish prereleases
+after standalone validation. Nucleon's separate manual integration workflow can
+verify a published Isotope version afterward.
 
 ## Licenses
 

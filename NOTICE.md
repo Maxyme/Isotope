@@ -25,3 +25,11 @@ this software are copyright © 1996–2026 The FreeType Project (www.freetype.or
 All rights reserved. Wine's replacement fonts retain their original notices;
 they are built/package inputs from the pinned Wine source, not Microsoft fonts.
 The corresponding FreeType source archive is included in source releases.
+
+The optional runtime diagnostics, builtin search precedence and macOS process
+supervision were implemented against upstream Wine after a source review of
+[Voile](https://github.com/Zagrios/voile),
+[voile-wine](https://github.com/Zagrios/voile-wine) and
+[voile-lkd](https://github.com/Zagrios/voile-lkd). These projects informed the
+concepts; their runtime code and CrossOver sources are not build inputs. Isotope's
+Wine additions retain Wine's LGPL-2.1-or-later licensing.

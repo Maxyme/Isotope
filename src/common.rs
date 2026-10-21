@@ -58,6 +58,7 @@ fn clean_environment_from(vars: impl Iterator<Item = (OsString, OsString)>) -> E
             "DYLD_",
             "FEX_",
             "MACRUNNER_",
+            "ISOTOPE_",
             "NUCLEON_",
             "VKD3D_",
             "DXVK_",
@@ -326,10 +327,15 @@ pub fn patches(source: &Path, names: &[String]) -> Result<()> {
         } else {
             // Source export adds modification notices; allow context-only fuzz when
             // verifying that the original patch is already present, without rewriting it.
+            // POSIX mode checks reversed new-file hunks without GNU patch's extra
+            // file-deletion check, which rejects the prepended source notice.
+            // Force the requested reverse direction; batch mode can silently skip
+            // a mismatched new-file hunk on BSD patch and report success.
             run(
                 "patch",
                 &[
-                    "--batch".into(),
+                    "--force".into(),
+                    "--posix".into(),
                     "-p1".into(),
                     "--input".into(),
                     patch,
@@ -469,6 +475,8 @@ mod tests {
         assert_eq!(source_diff(source.path()).unwrap(), marked);
         fs::write(source.path().join("new.h"), "changed\n").unwrap();
         assert_ne!(source_diff(source.path()).unwrap(), first);
+        assert!(patches(source.path(), &names).is_err());
+        assert_eq!(fs::read(source.path().join("new.h")).unwrap(), b"changed\n");
     }
     #[test]
     fn malformed_typed_json_reports_its_file_and_deserialization_error() {
@@ -490,6 +498,8 @@ mod tests {
                 ("VK_DRIVER_FILES", "stale"),
                 ("DYLD_LIBRARY_PATH", "other"),
                 ("FEX_TSOENABLED", "0"),
+                ("ISOTOPE_SUPERVISOR_PID", "123"),
+                ("ISOTOPE_FAULT_DIAGNOSTICS", "1"),
             ]
             .into_iter()
             .map(|(k, v)| (k.into(), v.into())),
