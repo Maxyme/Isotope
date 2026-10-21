@@ -1,9 +1,5 @@
 # Isotope notices
 
-Builder orchestration and portable process/archive helpers were extracted from
-Maxyme/Nucleon at b171067 (2026-10-19), under GPL-3.0-only. LICENSE retains those
-terms. Downstream source modifications are dated in exported compilation inputs.
-
 Pinned upstream Wine retains LGPL-2.1-or-later. The Darwin overlay is derived in
 part from Tolkara Wine/FEX changes (Vasilii Kharitonov and contributors); their
 copyright and license notices remain in the derived patches. Neither Tolkara fork

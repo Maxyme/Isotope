@@ -25,13 +25,7 @@ pub struct GraphicsRecipe {
     #[serde(default)]
     pub driver_environment: BTreeMap<String, String>,
     pub python: BTreeMap<String, String>,
-    pub wine: ExtraPatches,
     pub archives: Archives,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExtraPatches {
-    pub patches: Vec<String>,
 }
 #[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -174,7 +168,7 @@ impl Graphics {
     }
     pub fn build_wine(&self) -> Result<()> {
         let build = self.wine_build()?;
-        build.build_wine(&self.pin.wine.patches, Some(&self.sdk))?;
+        build.build_wine(&[], Some(&self.sdk))?;
         let runtime = self.work.join("runtime");
         let path = runtime.join("build.json");
         let mut receipt: WineBuildReceipt = read_json(&path)?;
@@ -1068,14 +1062,11 @@ mod recipe_tests {
         for bad in [
             format!("unused = true\n{original}"),
             original.replace("[archives.dxvk]", "[archives.dxvkk]"),
-            original.replace("unix_patches", "unix_patch"),
-            original.replace("patches =", "patch ="),
+            format!("{original}\n[wine]\npatches = []\n"),
             format!("{original}\n[steamac]\nurl = \"unused\"\nrevision = \"unused\"\n"),
             original.replace("\"image_view_min_lod\"", "true"),
         ] {
-            if bad != original {
-                assert!(toml::from_str::<GraphicsRecipe>(&bad).is_err());
-            }
+            assert!(toml::from_str::<GraphicsRecipe>(&bad).is_err());
         }
     }
 }

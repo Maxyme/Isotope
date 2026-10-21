@@ -926,7 +926,7 @@ index 9d3a0f22..afebd75f 100644
 + * address on hosts that have nothing below 4 GB: guest address g is host
 + * address wow64_window | g, so truncating a host address gives the guest
 + * one. Requests bounded below 4 GB are moved into the window and everything
-+ * else stays out of it; see docs/WINDOWS.md in Tolkara. */
++ * else stays out of this guest window. */
 +char *wow64_window = NULL;
 +static const size_t wow64_window_size = (size_t)1 << 32;
 +#endif
@@ -1935,7 +1935,7 @@ index b3ea679c..6f4bb0ae 100644
  
 +
 +/* On a host that has nothing below 4 GB the 32-bit address space lives at
-+ * a 4 GB-aligned window (docs/WINDOWS.md in Tolkara): a 32-bit address is
++ * a 4 GB-aligned host window: a 32-bit address is
 + * the low half of its host address. Widening goes through here. Nothing is
 + * mapped in the lowest and the highest 64k of the window, so values there are
 + * atoms, resource ids, window procedure handles or -1 passed in pointer
@@ -2093,7 +2093,7 @@ index 956e3863..7ef52596 100644
  
 +
 +/* On a host that has nothing below 4 GB the 32-bit address space lives at
-+ * a 4 GB-aligned window (docs/WINDOWS.md in Tolkara): a 32-bit address is
++ * a 4 GB-aligned host window: a 32-bit address is
 + * the low half of its host address. Widening goes through here. Nothing is
 + * mapped in the lowest and the highest 64k of the window, so values there are
 + * atoms, resource ids, window procedure handles or -1 passed in pointer

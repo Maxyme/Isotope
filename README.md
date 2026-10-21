@@ -1,21 +1,27 @@
 # Isotope
 
-Native ARM64 Wine/FEX runtimes for macOS.
+Build native ARM64 Wine/FEX runtimes for Apple Silicon macOS.
 
-Standalone Rust tooling for the pinned upstream Wine 11.20 / FEX-2610 implementation on
-Apple Silicon macOS. This repository owns compilation, patches, experimental
-CPU/graphics probes, runtime assembly and source-inclusive release publishing.
-Nucleon owns installation, ABI/integrity checks, Steam integration and game
-launching. This builder has no Cargo dependency on Nucleon or a sibling checkout.
+Isotope compiles pinned Wine 11.20 and FEX-2610 sources with a Darwin compatibility
+patch set, bundles FreeType and Wine fonts, and produces runtime archives with
+corresponding sources. Optional graphics workflows build Mesa/KosmicKrisp and
+paired DXVK, VKD3D-Proton or DXMT frontends.
 
-## Build and validate
+[Nucleon](https://github.com/Maxyme/Nucleon) installs and validates runtimes,
+integrates with Steam and launches games. Isotope has no Cargo dependency on
+Nucleon or a sibling checkout.
 
-Install Rust, Xcode Command Line Tools, Bison/Flex, CMake, Ninja and Python 3.9+
-(required by upstream FEX). The optional graphics experiments also need Meson,
-its pinned Python dependencies and the SDK specified by their recipe.
+## Build
+
+Use a native Apple Silicon host with Rust, Xcode Command Line Tools, Bison, Flex,
+CMake, Ninja and Python 3.9+ for FEX. Graphics builds also use LLVM, Meson, pinned
+Python packages and a Vulkan SDK. The default SDK path is
+`~/VulkanSDK/1.4.363.0/macOS`; graphics commands accept `--sdk` to override it.
+The frontend recipe pins the native LLVM version required by the DXMT experiment.
 
 ```sh
 cargo build --release --locked
+cargo fmt -- --check
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 
@@ -23,189 +29,112 @@ target/release/isotope fex fetch
 target/release/isotope fex doctor
 target/release/isotope fex build-fex
 target/release/isotope fex build-wine
+target/release/isotope fex probe
 ```
 
-`--work` defaults to `target/arm64-fex`. Existing local workspaces can be supplied
-explicitly; build inputs and receipts must still match pinned recipes. The upstream
-migration uses `core/`, `sources/wine`, `sources/fex` and `sources/shared-data`; old
-Tolkara workspaces remain on disk and are not adopted or deleted. Use a fresh
-`--work` for this version.
+`--work` defaults to `target/arm64-fex`; `--jobs` defaults to 6. Component builds
+and probes use that workspace. Use `release build` below to create an installable
+core package.
 
-Wine configuration is recorded in `wine-build/isotope-configure.json` and copied
-into runtime provenance. Reuse requires the same source path/revision/diff,
-patches, configuration arguments, compiler identities, toolchain pin, SDK identity
-and explicit configure environment. Unknown shell variables and user Autoconf
-site scripts are excluded from configure. A changed input, missing/corrupt receipt
-or incomplete build directory stops before compilation; use a fresh `--work`
-directory. Existing build products are preserved. Pre-receipt workspaces must also
-start fresh; Isotope never adopts their Makefile as proof of configuration.
+Build reuse requires matching sources, patches, configuration, compilers,
+toolchain, SDK and recorded environment. Missing or mismatched receipts stop the
+build and preserve existing products. Use a fresh `--work` after changing inputs;
+old build directories are not adopted automatically. Recipes and receipts reject
+unknown fields, unsupported schemas and malformed values.
 
-Builder recipes reject unknown fields, misspelled source/archive slots and wrong
-value types. Historical unused recipe settings have been removed. Persisted Wine,
-FEX companion, frontend and source-overlay receipts use typed Serde contracts;
-release validation uses explicit status enums and typed guest outcomes. Unsupported
-receipt schemas, missing required fields and malformed manifests fail before they
-can authorize assembly or packaging. Historical schema-less component receipts
-require rebuilding the affected components; they are never implicitly upgraded.
-JSON errors include the input filename.
-Nucleon's independently versioned inspection response accepts additional fields
-while still requiring its schema and runtime fields to have the expected types.
+## Recipes and graphics
 
-`fex probe`, `fex probe-unixlib`, `fex check-reference` and the `dx12`/`frontend`
-commands retain the experimental probes and assembly workflows. Reference app
-components are local diagnostics, never inputs to the core release publisher.
-GPU compiler DLLs must be explicitly supplied with `NUCLEON_PROBE_D3DCOMPILER`.
-The Steam-route probe and game launch wrappers remain in Nucleon's devtools.
+The three recipes describe separate build layers, not three competing Wine bases.
 
-Package validation uses a separately built Nucleon executable through its public
-CLI, not duplicated installer/ABI code. Supply `--nucleon /path/to/nucleon` or
-`ISOTOPE_NUCLEON`; otherwise `nucleon` is resolved from PATH. It must support
-`wine install` and schema-1 `wine inspect --json`. Build and fetch commands do
-not need Nucleon. Assembly invokes its descriptor validator. Release validation
-installs into private support storage, verifies the installed files and native
-dependencies, then runs CPU probes from that relocated installation.
+| Recipe | Purpose | Commands |
+| --- | --- | --- |
+| [arm64-fex.toml](assets/wine/recipes/arm64-fex.toml) | Wine/FEX sources, Darwin patches, compiler, FreeType and optional reference archive | `fex`, `release`; shared by graphics builds |
+| [arm64-fex-dx12.toml](assets/wine/recipes/arm64-fex-dx12.toml) | Mesa, its build dependencies, Vulkan-enabled Wine and reference DXVK/VKD3D archives | `dx12` |
+| [arm64ec-graphics.toml](assets/wine/recipes/arm64ec-graphics.toml) | Source-built graphics frontends, MinGW and the paired Darwin TEB/CRT settings | `frontend` |
+
+All three are used. Core release builds require only the first recipe. The
+`dx12` name also covers Vulkan/DX11 support; `frontend` builds the separately
+paired graphics DLLs. These workflows retain distinct build and provenance
+records because their Wine configuration, sources and ABI requirements differ.
+Use `isotope dx12 --help` and `isotope frontend --help` for available actions.
+
+Mesa is pinned to [Maxyme/Mesa](https://github.com/Maxyme/mesa), based on
+athei/Mesa with focused compatibility fixes. Isotope builds this source directly.
+The recipe's `MESA_KK_EXPERIMENTAL=image_view_min_lod` setting is included in native
+probes and assembled runtimes. Sparse D32 support remains incomplete, and polygon
+point mode uses a wireframe fallback.
+
+Reference-app imports are local diagnostics. Fetch them explicitly with
+`fex fetch --reference`; they are excluded from core releases. Shader probes
+require an explicitly supplied `NUCLEON_PROBE_D3DCOMPILER`. Steam and game launch
+helpers live in Nucleon's devtools.
+
+## Validation and compatibility
+
+Core probes cover x64/x86 execution, shared data and memory protection. Font
+validation checks real Tahoma text metrics and an exact 480×240 client rectangle,
+then repeats after Wine restart. `fex probe --window` adds a visible GDI test.
+FreeType and Wine's replacement fonts are bundled; no host font library is needed.
+Use fresh test prefixes when moving from a fontless runtime: persisted window
+and theme metrics may already be corrupt. Preserve existing user prefixes/saves.
+
+Both x64 and x86 release CPU tests always run. x64 execution, archive import,
+integrity, native dependencies, font/window metrics and server cleanup must pass.
+For this preview, an x86 failure is recorded as `FAILED_OPTIONAL` and the overall
+result becomes `PASSED_WITH_OPTIONAL_FAILURE`. Add `--require-x86` to any `release`
+action to make it mandatory. Interruption still aborts publication.
+
+Local testing has passed both CPU workloads, including 32-bit child creation,
+and relocated Nucleon archive installation. The separately assembled graphics
+runtime reached user-confirmed menus and input in DiRT Rally 2.0 (DX11/DXVK) and
+DMC5 (DX12/VKD3D). Driving, combat and sustained performance remain untested.
+The ARM64EC graphics pairing currently accepts x64 games only; GoNNER's x86
+WineD3D path fails OpenGL context creation. VKD3D also reports the missing
+`VK_EXT_dynamic_rendering_unused_attachments` extension. See [ROADMAP.md](ROADMAP.md)
+for the 32-bit graphics plan. CPU and native graphics probes do not certify games.
+
+## Package and install
+
+Package validation invokes Nucleon's public CLI. Supply `--nucleon /path/to/nucleon`
+or `ISOTOPE_NUCLEON`; otherwise `nucleon` is resolved from PATH. The executable must
+support `wine install` and schema-1 `wine inspect --json`. Fetching and component
+builds do not require Nucleon; runtime assembly and release validation do.
 
 ```sh
-target/release/isotope --nucleon ../Nucleon/target/debug/nucleon \
-  release build --version 0.1.0-rc.1 --output target/release-assets
+target/release/isotope --nucleon /path/to/nucleon release build \
+  --version 0.1.0-rc.1 --work target/runtime-release \
+  --output target/release-assets
 ```
 
-`release package` requires unchanged sources/products and the publisher build
-receipt. `release validate` exercises existing built inputs without creating
-publishable release assets. Its new output directory retains logs and a
-`diagnostic-runtime.tar.gz` for local installation tests. This diagnostic archive
-has no corresponding-sources bundle and is not a distribution release.
+The output directory must be new. `release build` fetches, compiles, packages and
+validates the core. `release package` reuses an unchanged publisher build receipt.
+`release validate` tests existing products through a relocated installation,
+retaining logs and a diagnostic archive in a new output directory. The diagnostic
+archive has no corresponding source bundle and is not a distribution release.
 
-## Temporary 32-bit policy
-
-**Both x64 and x86 tests always run.** x64, archive import/integrity/native closure,
-and server cleanup must pass. A failed x86 test is temporarily non-blocking,
-recorded as `FAILED_OPTIONAL` with its error and log; overall validation becomes
-`PASSED_WITH_OPTIONAL_FAILURE`.
-
-The original `CreateProcessW` error 998 was traced to a missing image-name pointer
-conversion in Wine and is corrected by the downstream patch described in
-[WOW64-FIX.md](WOW64-FIX.md). The preview policy remains optional until deliberately
-changed; `--require-x86` still forces the check. CPU tests do not qualify gameplay.
-
-Pass `--require-x86` to any `release` action to restore mandatory 32-bit validation.
-Interruption still aborts publication. This temporary policy is visible in
-release metadata and notes; failures are not reported as test passes.
-
-## Releases and Nucleon installation
-
-Core artifacts contain native Wine, both FEX PE emulators and Unix companions,
-built-in WineD3D, provenance and notices. They exclude DXMT/DXVK/VKD3D, Vulkan
-loaders/drivers, Steam libraries, Apple GPTK and Microsoft game DLLs.
-
-Each release includes:
-
-- `isotope-<version>-macos-arm64.tar.gz`, with `nucleon-runtime.toml` schema 1.
-- Matching patched Wine/FEX/helper and builder sources, initialized pinned
-  submodules, per-file source manifest, build scripts and notices.
-- `runtime-release.json` schema 2, `SHA256SUMS.txt`, release notes and validation logs.
-
-Nucleon's named source resolves GitHub release tag `v<version>` in
-`Maxyme/isotope`; it checks the exact version, asset filename and SHA256 before
-using its normal immutable-generation importer. No automatic latest update.
+Core releases contain Wine, x64/x86 FEX emulators and native companions, built-in
+WineD3D, fonts, notices and provenance. Graphics add-ons, Vulkan loaders/drivers,
+Steam binaries, GPTK and Microsoft game DLLs are excluded. Each release includes
+a binary archive, corresponding patched sources and build scripts,
+`runtime-release.json`, `SHA256SUMS.txt` and validation logs.
 
 ```sh
 nucleon wine install isotope --version 0.1.0-rc.1 --register
 nucleon wine install ./isotope-0.1.0-rc.1-macos-arm64.tar.gz --register
-nucleon wine install https://github.com/Maxyme/isotope/releases/download/v0.1.0-rc.1/isotope-0.1.0-rc.1-macos-arm64.tar.gz --register
 ```
 
-A local directory is also accepted. URLs use adjacent `runtime-release.json`
-unless `--sha256` is supplied. Local archives can optionally supply a checksum.
-`--register` affects only the experimental FEX selection, leaving Intel Wine alone.
+Nucleon also accepts a runtime directory or archive URL. The named source resolves
+the exact `v<version>` release in `Maxyme/isotope` and verifies its checksum.
+Registration selects the experimental FEX runtime without changing Intel Wine.
 
-The workflow accepts a full Nucleon commit through manual input `nucleon_ref` or
-repository variable `NUCLEON_VALIDATOR_REVISION` for tags. This pin must contain
-the consumer CLI described above. Configure it after the consumer change is
-committed and pushed. Tags `v*` produce prereleases; manual dispatch only produces
-CI artifacts. The local repository creation does not create a GitHub repository,
-push tags or publish assets.
+The [release workflow](.github/workflows/release.yml) requires a full
+Nucleon commit via manual input `nucleon_ref` or repository variable
+`NUCLEON_VALIDATOR_REVISION`. Use a pushed commit containing the required consumer
+CLI. Manual dispatch retains CI artifacts; `v*` tags publish prereleases after
+validation.
 
-## Provenance and licenses
+## Licenses
 
-The builder was extracted from Nucleon commit b171067, including its tested
-process ownership and bounded artifact helpers. The small portable helpers now
-belong to this independent builder; runtime acceptance policy remains exclusively
-in Nucleon. Wine/FEX and bundled toolchain notices retain their original terms.
-Builder code retains GPL-3.0-only; Wine retains LGPL-2.1-or-later and FEX MIT.
-Corresponding patched compilation inputs and build scripts accompany releases.
-See LICENSE, NOTICE.md and the source archives for attribution and rebuild inputs.
-
-## Local split verification (2026-10-19)
-
-18 standalone tests and strict Clippy/formatting passed. Packaging existing pinned
-build products, real Nucleon CLI import/verification, x64 execution and cleanup
-passed. x86 reproduced error 998 and was recorded as optional; validation exited
-zero. Direct archive installation/registration, checksum rejection and Intel
-selection preservation passed in an isolated home. No Steam/game launch, fresh
-full source build or remote release run was performed. See VALIDATION.json.
-
-The split verification above predates the 32-bit process fix. The current
-[WoW64 fix](WOW64-FIX.md) and [verification record](WOW64-VALIDATION.json) show both
-guests passing a strict local `--require-x86` validation run.
-
-## Upstream migration (2026-10-20)
-
-Wine is pinned to the official 11.20 release and FEX to FEX-2610. The builder no
-longer checks out either Tolkara fork. Three reviewed patches carry the Darwin
-TEB slot, guest address window, MAP_JIT pool and shared-page/Steam/graphics glue.
-Wine 11.20's existing syscall wrappers replace the older generated wrapper layer;
-FEX is selected through Wine's registry configuration rather than loader changes.
-The iPad hosting, aliased-JIT and application-specific fork changes are omitted.
-The separate graphics recipe no longer adds exit/message tracing patches.
-
-Both guest workloads pass with a fresh prefix, including 32-bit child process
-creation; the x64 shared-page/protection and self-modifying-code checks pass.
-Nucleon accepts the assembled Vulkan runtime. DiRT Rally 2.0 launched with DXVK
-and KosmicKrisp, with menu and input confirmed by the user. No CrossOver, GPTK or
-D3DMetal components were used. Core release contents still exclude graphics and
-Steam binaries; game validation used the separately assembled graphics runtime.
-A second fresh build through the Isotope CLI passed the real Nucleon managed
-archive import, integrity/native dependency audit, both guest tests and cleanup
-with `release validate --require-x86`. 32 Rust tests, strict Clippy and formatting
-pass; one archive-fixture test remains intentionally ignored. The DiRT-tested
-graphics runtime is retained locally in `target/upstream-game-runtime`.
-See [UPSTREAM-VALIDATION.json](UPSTREAM-VALIDATION.json) for the precise scope.
-
-### Mesa driver source
-
-The graphics recipe pins [Maxyme/Mesa](https://github.com/Maxyme/mesa), based on
-`athei/mesa` with focused wireframe, linear attachment and query allocation fixes.
-Isotope fetches this single Mesa source and does not clone or apply patches from
-Steamac. Native probes and their licenses live with the Mesa source. Mesa
-checkouts and compiler/driver build directories are separated by source revision.
-
-`MESA_KK_EXPERIMENTAL=image_view_min_lod` is explicit in the graphics recipe and
-is applied to native probes and assembled Vulkan runtimes. The fork's macOS CI
-runs the seven native probe groups and a linear attachment GPU readback test.
-Sparse D32 images remain unsupported and their depth cases are skipped; polygon
-point mode retains the wireframe fallback. Native tests are not game validation.
-
-## Font support and startup validation
-
-Wine requires the pinned FreeType source archive in the core recipe. Isotope builds
-an ARM64 shared library with optional external codec/shaping dependencies disabled,
-packages it beside Wine's native modules, and includes Wine's replacement fonts.
-No Homebrew font library is needed at runtime. The archive checksum, library/font
-hashes, upstream license texts and complete dependency source archive accompany
-binary/source releases.
-
-`fex probe` now always checks real Tahoma text metrics and an exact 480×240 client
-rectangle, then repeats after restarting Wine. `--window` additionally exercises a
-visible GDI window. Relocated release validation requires the same checks; x86
-CPU testing remains optional unless `--require-x86` is selected.
-
-Changing from the old fontless recipe requires a fresh build workspace. Test with
-fresh prefixes: old prefixes may contain corrupt WindowMetrics and cached theme
-metrics. Preserve user prefixes and saves; resetting the registry alone cannot
-repair a runtime that still has no font backend.
-
-The font-enabled runtime and pinned Mesa fork pass live Nucleon menu/input checks
-for DiRT Rally 2.0 (DX11/DXVK) and DMC5 (DX12/VKD3D), confirmed by the user.
-Driving and combat remain untested. See [FONT-VALIDATION.md](FONT-VALIDATION.md)
-for runtime hashes, checks and remaining graphics limitations.
+The builder is GPL-3.0-only. Wine, FEX, FreeType, graphics components and compiler
+runtimes retain their own licenses and attribution. See [LICENSE](LICENSE),
+[NOTICE.md](NOTICE.md) and [the patch notes](assets/patches/README.md).

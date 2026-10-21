@@ -14,9 +14,6 @@ pyyaml = "6.0.3"
 packaging = "25.0"
 markupsafe = "3.0.4"
 
-[wine]
-patches = []
-
 [archives.vkd3d]
 url = "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v3.0.1/vkd3d-proton-3.0.1.tar.zst"
 archive = "vkd3d-proton-3.0.1.tar.zst"

@@ -1,6 +1,6 @@
 # Upstream Wine 11.20 / FEX-2610 with the minimal Darwin compatibility overlay.
-# Experimental CPU-only build. This does not register a Nucleon runtime or
-# claim game compatibility. Upstream copyright and licenses remain applicable.
+# Core runtime with built-in WineD3D; graphics add-ons use separate recipes.
+# Build/probe results do not certify games. Upstream licenses remain applicable.
 schema = 1
 
 [sources.shared_data]
