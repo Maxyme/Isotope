@@ -188,19 +188,7 @@ pub fn prepare_sources(build: &Build, version: &str) -> Result<()> {
     Ok(())
 }
 pub fn core_descriptor() -> String {
-    // Keep a single runtime contract for the full x64+x86 core, with no graphics claims.
-    include_str!("../assets/wine/runtime-arm64-fex.example.toml")
-        .split("# Optional bundled components.")
-        .next()
-        .unwrap()
-        .replace(
-            "backends = [\"auto\", \"dxmt\", \"dxvk\", \"kosmickrisp\"]",
-            "backends = [\"auto\"]",
-        )
-        .replace(
-            "steam_protocol = \"valve-redirect\"",
-            "steam_protocol = \"bridge\"",
-        )
+    include_str!("../assets/wine/runtime-arm64-fex.toml").to_owned()
 }
 pub fn stage_core(build: &Build, target: &Path) -> Result<()> {
     let runtime = build.work.join("runtime");
@@ -489,13 +477,41 @@ fn guest_outcome(guest: &str, result: Result<()>, require_x86: bool) -> Result<G
     }
 }
 
-fn validate_install(
+fn validate_archive(
     build: &Build,
     archive: &Path,
+    expected: &Path,
     work: &Path,
     logs: &Path,
 ) -> Result<ValidationReport> {
-    let descriptor = crate::consumer::install_archive(archive, &work.join("support"))?;
+    let mut validation = ValidationReport {
+        schema: Schema2,
+        archive_relocation: ValidationStatus::Testing,
+        managed_archive_import: ValidationStatus::NotRun,
+        integrity_and_native_dependencies: ValidationStatus::Testing,
+        guest_smoke: BTreeMap::new(),
+        x86_required: crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),
+        steam: ValidationStatus::NotRun,
+        gameplay: ValidationStatus::NotRun,
+        status: ValidationStatus::Testing,
+        prefix_cleanup: None,
+        error: None,
+    };
+    write_json(&logs.join("validation.json"), &validation)?;
+    let descriptor =
+        match crate::package_validation::relocate(archive, expected, &work.join("runtime"), logs) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                validation.archive_relocation = ValidationStatus::Failed;
+                validation.integrity_and_native_dependencies = ValidationStatus::Failed;
+                validation.status = ValidationStatus::Failed;
+                validation.error = Some(format!("{error:#}"));
+                write_json(&logs.join("validation.json"), &validation)?;
+                return Err(error);
+            }
+        };
+    validation.archive_relocation = ValidationStatus::Passed;
+    validation.integrity_and_native_dependencies = ValidationStatus::Passed;
     let runtime = descriptor.root.clone();
     let mut env = clean_environment();
     for (k, v) in &descriptor.environment {
@@ -507,9 +523,9 @@ fn validate_install(
         ("WINESERVER", p(&descriptor.server)),
         (
             "WINEDLLPATH",
-            p(runtime.join("lib/wine/aarch64-windows"))
-                + ":"
-                + &p(runtime.join("lib/wine/i386-windows")),
+            std::env::join_paths(&descriptor.windows_dirs)?
+                .to_string_lossy()
+                .into_owned(),
         ),
         ("DYLD_LIBRARY_PATH", p(&descriptor.unix_dir)),
         ("DYLD_FALLBACK_LIBRARY_PATH", p(runtime.join("lib"))),
@@ -521,18 +537,6 @@ fn validate_install(
     ] {
         set(&mut env, k, v);
     }
-    let mut validation = ValidationReport {
-        schema: Schema2,
-        managed_archive_import: ValidationStatus::Passed,
-        integrity_and_native_dependencies: ValidationStatus::Passed,
-        guest_smoke: BTreeMap::new(),
-        x86_required: crate::REQUIRE_X86.load(std::sync::atomic::Ordering::SeqCst),
-        steam: ValidationStatus::NotRun,
-        gameplay: ValidationStatus::NotRun,
-        status: ValidationStatus::Testing,
-        prefix_cleanup: None,
-        error: None,
-    };
     write_json(&logs.join("validation.json"), &validation)?;
     let result = (|| {
         run(
@@ -675,7 +679,13 @@ pub fn validate_built(build: &Build, logs: &Path) -> Result<()> {
     stage_core(build, &runtime)?;
     let binary = logs.join("diagnostic-runtime.tar.gz");
     archive(&binary, &runtime, &files(&runtime)?, "", 0)?;
-    validate_install(build, &binary, &temp.path().join("support"), logs)?;
+    validate_archive(
+        build,
+        &binary,
+        &runtime,
+        &temp.path().join("relocated"),
+        logs,
+    )?;
     Ok(())
 }
 pub fn publish_assets(target: &Path, build: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
@@ -729,10 +739,11 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
             .collect::<Vec<_>>();
         sources.push("SOURCE-MANIFEST.json".into());
         archive(&assets.join(&source), stage.path(), &sources, "", epoch)?;
-        release["validation"] = serde_json::to_value(validate_install(
+        release["validation"] = serde_json::to_value(validate_archive(
             build,
             &assets.join(&binary),
-            &stage.path().join("support"),
+            &runtime,
+            &stage.path().join("relocated"),
             &logs,
         )?)?;
         release["binary"] = json!({"file":binary,"sha256":sha(&assets.join(&binary))?});
@@ -741,7 +752,7 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
         fs::write(
             assets.join("RELEASE-NOTES.md"),
             format!(
-                "# Isotope {version}: experimental ARM64 Wine/FEX core\n\nCPU/core preview. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {} --register\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/isotope/README.md.\n",
+                "# Isotope {version}: experimental ARM64 Wine/FEX core\n\nCore package validated independently of Nucleon after archive relocation. Nucleon managed installation and Steam/game integration are separate consumer checks. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {} --register\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/isotope/README.md.\n",
                 sha(&assets.join(&binary))?
             ),
         )?;
@@ -1122,6 +1133,30 @@ mod tests {
         let descriptor: toml::Value = toml::from_str(&core_descriptor()).unwrap();
         assert_eq!(descriptor["guests"].as_array().unwrap().len(), 2);
         assert!(descriptor.get("graphics").is_none());
+    }
+    #[test]
+    #[ignore = "requires a local built core archive, staging directory and compiler workspace on Apple Silicon"]
+    fn real_archive_validation_without_nucleon() {
+        require_native().unwrap();
+        let input = |name| PathBuf::from(std::env::var_os(name).expect(name));
+        let build = Build::new(&input("ISOTOPE_TEST_WORK"), 1).unwrap();
+        let output = input("ISOTOPE_TEST_OUTPUT");
+        fs::create_dir(&output).unwrap();
+        let report = validate_archive(
+            &build,
+            &input("ISOTOPE_TEST_ARCHIVE"),
+            &input("ISOTOPE_TEST_CORE"),
+            &output.join("relocated"),
+            &output,
+        )
+        .unwrap();
+        assert_eq!(report.archive_relocation, ValidationStatus::Passed);
+        assert_eq!(report.managed_archive_import, ValidationStatus::NotRun);
+        assert_eq!(
+            report.integrity_and_native_dependencies,
+            ValidationStatus::Passed
+        );
+        assert_eq!(report.status, ValidationStatus::Passed);
     }
     #[test]
     fn archive_preserves_modes_links_and_is_deterministic() {

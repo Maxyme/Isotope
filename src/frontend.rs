@@ -1014,10 +1014,17 @@ mod tests {
     }
     #[test]
     fn descriptor_transformation_scopes_guests_and_preserves_execution_contract() {
-        let mut source: toml::Value = toml::from_str(include_str!(
-            "../assets/wine/runtime-arm64-fex.example.toml"
-        ))
-        .unwrap();
+        let mut source: toml::Value =
+            toml::from_str(include_str!("../assets/wine/runtime-arm64-fex.toml")).unwrap();
+        source.as_table_mut().unwrap().insert(
+            "graphics".into(),
+            toml::Value::try_from(BTreeMap::from([
+                ("dxmt", "share/nucleon/dxmt"),
+                ("vulkan_icd", "lib/vulkan/kosmickrisp_icd.json"),
+                ("vulkan_loader", "lib/vulkan/libvulkan.1.dylib"),
+            ]))
+            .unwrap(),
+        );
         let result = experimental_descriptor(&toml::to_string(&source).unwrap()).unwrap();
         let native: toml::Value = toml::from_str(&result).unwrap();
         assert_eq!(native["guests"].as_array().unwrap().len(), 1);

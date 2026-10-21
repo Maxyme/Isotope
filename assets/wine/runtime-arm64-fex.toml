@@ -1,4 +1,4 @@
-# Copy as nucleon-runtime.toml at the root of a complete native runtime.
+# Packaged as nucleon-runtime.toml by the core release builder.
 # Every path must exist inside that root (including symlink targets).
 schema = 1
 mode = "arm64-fex"
@@ -7,8 +7,8 @@ loader = "bin/wine"
 server = "bin/wineserver"
 unix_dir = "lib/wine/aarch64-unix"
 windows_dirs = ["lib/wine/aarch64-windows", "lib/wine/i386-windows"]
-backends = ["auto", "dxmt", "dxvk", "kosmickrisp"]
-steam_protocol = "valve-redirect"
+backends = ["auto"]
+steam_protocol = "bridge"
 steam_helper = true
 
 [prefix]
@@ -28,12 +28,3 @@ unix_library = "lib/wine/aarch64-unix/libwow64fex.so"
 [environment]
 FEX_TSOENABLED = "1"
 NUCLEON_EMULATE_KUSD = "1"
-
-# Optional bundled components. Remove entries for components not included.
-# DXGI may be a DXGI-only DXVK bundle when using VKD3D.
-[graphics]
-dxmt = "share/nucleon/dxmt"
-dxvk = "share/nucleon/dxvk"
-vkd3d = "share/nucleon/vkd3d"
-vulkan_icd = "lib/vulkan/kosmickrisp_icd.json"
-vulkan_loader = "lib/vulkan/libvulkan.1.dylib"

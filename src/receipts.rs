@@ -110,7 +110,7 @@ pub struct FrontendBuildReceipt {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ValidationStatus {
     Testing,
@@ -118,6 +118,7 @@ pub enum ValidationStatus {
     Failed,
     FailedOptional,
     PassedWithOptionalFailure,
+    #[default]
     NotRun,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +140,8 @@ impl GuestOutcome {
 #[serde(deny_unknown_fields)]
 pub struct ValidationReport {
     pub schema: Schema2,
+    #[serde(default)]
+    pub archive_relocation: ValidationStatus,
     pub managed_archive_import: ValidationStatus,
     pub integrity_and_native_dependencies: ValidationStatus,
     pub guest_smoke: BTreeMap<String, GuestOutcome>,
@@ -171,6 +174,7 @@ mod tests {
         );
         let report = ValidationReport {
             schema: Schema2,
+            archive_relocation: ValidationStatus::Passed,
             managed_archive_import: ValidationStatus::Passed,
             integrity_and_native_dependencies: ValidationStatus::Passed,
             guest_smoke: BTreeMap::from([(
@@ -187,7 +191,18 @@ mod tests {
         let value = serde_json::to_value(&report).unwrap();
         assert_eq!(value["status"], "PASSED_WITH_OPTIONAL_FAILURE");
         assert_eq!(value["guest_smoke"]["x86"]["status"], "FAILED_OPTIONAL");
-        assert!(serde_json::from_value::<ValidationReport>(value).is_ok());
+        assert!(serde_json::from_value::<ValidationReport>(value.clone()).is_ok());
+        let mut previous = value;
+        previous
+            .as_object_mut()
+            .unwrap()
+            .remove("archive_relocation");
+        assert_eq!(
+            serde_json::from_value::<ValidationReport>(previous)
+                .unwrap()
+                .archive_relocation,
+            ValidationStatus::NotRun
+        );
     }
     #[test]
     fn malformed_receipts_and_unknown_statuses_fail_at_the_boundary() {

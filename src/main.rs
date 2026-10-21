@@ -9,6 +9,7 @@ mod downloads;
 mod fonts;
 mod frontend;
 mod graphics;
+mod package_validation;
 mod process;
 mod receipts;
 mod release;
@@ -27,7 +28,7 @@ use std::{num::NonZeroUsize, path::PathBuf, sync::atomic::Ordering};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    /// Consumer executable used for package/assembly integration validation
+    /// Optional consumer executable for experimental graphics assembly
     #[arg(long, global = true)]
     nucleon: Option<PathBuf>,
 }

@@ -69,30 +69,6 @@ Reference-app imports are local diagnostics. Fetch them explicitly with
 require an explicitly supplied `NUCLEON_PROBE_D3DCOMPILER`. Steam and game launch
 helpers live in Nucleon's devtools.
 
-## Validation and compatibility
-
-Core probes cover x64/x86 execution, shared data and memory protection. Font
-validation checks real Tahoma text metrics and an exact 480×240 client rectangle,
-then repeats after Wine restart. `fex probe --window` adds a visible GDI test.
-FreeType and Wine's replacement fonts are bundled; no host font library is needed.
-Use fresh test prefixes when moving from a fontless runtime: persisted window
-and theme metrics may already be corrupt. Preserve existing user prefixes/saves.
-
-Both x64 and x86 release CPU tests always run. x64 execution, archive import,
-integrity, native dependencies, font/window metrics and server cleanup must pass.
-For this preview, an x86 failure is recorded as `FAILED_OPTIONAL` and the overall
-result becomes `PASSED_WITH_OPTIONAL_FAILURE`. Add `--require-x86` to any `release`
-action to make it mandatory. Interruption still aborts publication.
-
-Local testing has passed both CPU workloads, including 32-bit child creation,
-and relocated Nucleon archive installation. The separately assembled graphics
-runtime reached user-confirmed menus and input in DiRT Rally 2.0 (DX11/DXVK) and
-DMC5 (DX12/VKD3D). Driving, combat and sustained performance remain untested.
-The ARM64EC graphics pairing currently accepts x64 games only; GoNNER's x86
-WineD3D path fails OpenGL context creation. VKD3D also reports the missing
-`VK_EXT_dynamic_rendering_unused_attachments` extension. See [ROADMAP.md](ROADMAP.md)
-for the 32-bit graphics plan. CPU and native graphics probes do not certify games.
-
 ## Package and install
 
 Package validation invokes Nucleon's public CLI. Supply `--nucleon /path/to/nucleon`

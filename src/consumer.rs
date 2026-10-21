@@ -1,13 +1,8 @@
-//! Execute the real consumer; this repository has no source dependency on Nucleon.
-use crate::common::{clean_environment, command, execute, output, p, set, sha};
+//! Optional Nucleon inspection for experimental graphics assembly.
+use crate::common::{clean_environment, output, p};
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
 pub const RECEIPT: &str = ".nucleon-install.json";
 #[derive(Debug, Deserialize)]
 pub struct Graphics {
@@ -24,7 +19,6 @@ pub struct Runtime {
     pub server: PathBuf,
     pub unix_dir: PathBuf,
     pub windows_dirs: Vec<PathBuf>,
-    pub environment: BTreeMap<String, String>,
     pub graphics: Graphics,
 }
 fn executable() -> PathBuf {
@@ -37,7 +31,12 @@ impl Runtime {
     pub fn inspect(root: &Path) -> Result<Self> {
         let value = output(executable(), &["wine".into(),"inspect".into(),p(root),"--json".into()], Some(&clean_environment()), None)
             .context("Consumer validation requires Nucleon with 'wine inspect --json'; pass --nucleon /path/to/nucleon")?;
-        parse_inspection(&value)
+        let runtime = parse_inspection(&value)?;
+        ensure!(
+            runtime.root == root.canonicalize()?,
+            "Nucleon inspected a different runtime root"
+        );
+        Ok(runtime)
     }
 }
 fn parse_inspection(value: &str) -> Result<Runtime> {
@@ -54,57 +53,6 @@ fn parse_inspection(value: &str) -> Result<Runtime> {
         "Unsupported consumer inspection schema"
     );
     Ok(inspection.runtime)
-}
-
-pub fn install_archive(archive: &Path, support: &Path) -> Result<Runtime> {
-    fs::create_dir_all(support)?;
-    let mut env = clean_environment();
-    set(&mut env, "NUCLEON_SUPPORT_DIR", support);
-    let mut cmd = command(
-        executable(),
-        &[
-            "wine".into(),
-            "install".into(),
-            p(archive),
-            "--sha256".into(),
-            sha(archive)?,
-        ],
-        Some(&env),
-        None,
-    );
-    execute(
-        &mut cmd,
-        Some(&support.join("consumer-install.log")),
-        Duration::from_secs(600),
-        0,
-        Duration::from_millis(300),
-    )?;
-    let store = support.join("runtimes/arm64-fex");
-    let roots: Vec<_> = fs::read_dir(&store)?
-        .map(|e| e.map(|e| e.path()))
-        .collect::<std::io::Result<Vec<_>>>()?
-        .into_iter()
-        .filter(|p| p.join(RECEIPT).is_file())
-        .collect();
-    ensure!(
-        roots.len() == 1,
-        "Expected exactly one installed generation in isolated storage"
-    );
-    let root = &roots[0];
-    let mut cmd = command(
-        executable(),
-        &["wine".into(), "fex".into(), "verify".into(), p(root)],
-        Some(&env),
-        None,
-    );
-    execute(
-        &mut cmd,
-        Some(&support.join("consumer-verify.log")),
-        Duration::from_secs(600),
-        0,
-        Duration::from_millis(300),
-    )?;
-    Runtime::inspect(root)
 }
 
 #[cfg(test)]
