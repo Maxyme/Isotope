@@ -141,16 +141,26 @@ pub fn mark_changes(root: &Path, names: &[String], version: &str, date: &str) ->
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or_default();
-        ensure!(
-            ["c", "cpp", "h", "m", "spec"].contains(&extension),
-            "Unsupported modified-source notice: {name}"
-        );
-        let (prefix, end) = if extension == "spec" {
-            ("# ", "")
-        } else {
-            ("/* ", " */")
-        };
         let text = fs::read_to_string(&path)?;
+        let filename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let (prefix, end) = match (filename, extension) {
+            (_, "c" | "cpp" | "h" | "m" | "S") => ("/* ", " */"),
+            ("configure.ac", _) => ("dnl ", ""),
+            ("CMakeLists.txt" | "Makefile.in", _) | (_, "spec") => ("# ", ""),
+            (name, _) if name.ends_with(".inf.in") => ("; ", ""),
+            _ if text.starts_with("#!") => ("# ", ""),
+            _ => anyhow::bail!("Unsupported modified-source notice: {name}"),
+        };
+        // Executable scripts must retain their interpreter on the first line.
+        let (shebang, text) = if text.starts_with("#!") {
+            let (line, body) = text.split_once('\n').context("Truncated source shebang")?;
+            (format!("{line}\n"), body)
+        } else {
+            (String::new(), text.as_str())
+        };
         let text = if text.starts_with(&format!(
             "{prefix}Nucleon runtime downstream modifications:"
         )) {
@@ -158,12 +168,12 @@ pub fn mark_changes(root: &Path, names: &[String], version: &str, date: &str) ->
                 .context("Truncated modification notice")?
                 .1
         } else {
-            &text
+            text
         };
         crate::atomic::atomic_write_file(
             path,
             format!(
-                "{prefix}Nucleon runtime downstream modifications: {date}, runtime {version}.{end}\n{text}"
+                "{shebang}{prefix}Nucleon runtime downstream modifications: {date}, runtime {version}.{end}\n{text}"
             ),
         )?;
     }
@@ -1093,6 +1103,73 @@ mod tests {
                 .any(|l| l.ends_with("/bin/wine") || l.ends_with(".so"))
         );
     }
+    #[test]
+    fn source_notices_cover_build_inputs_and_preserve_script_execution() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, original, prefix) in [
+            (
+                "CMakeLists.txt",
+                "cmake_minimum_required(VERSION 3.14)\n",
+                "# ",
+            ),
+            ("Makefile.in", "all:\n\t@true\n", "# "),
+            ("configure.ac", "AC_INIT([fixture], [1.0])\n", "dnl "),
+            ("wine.inf.in", "[Version]\nSignature=\"$CHICAGO$\"\n", "; "),
+            ("Module.S", ".text\n", "/* "),
+            ("configure", "#!/bin/sh\nexit 0\n", "# "),
+            ("make_opengl", "#!/usr/bin/perl -w\nexit 0;\n", "# "),
+        ] {
+            let path = root.path().join(name);
+            fs::write(&path, original).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            for version in ["0.1.0-rc.1", "0.1.0-rc.2"] {
+                mark_changes(root.path(), &[name.into()], version, "2026-10-21").unwrap();
+            }
+            let text = fs::read_to_string(&path).unwrap();
+            let (body, original_body) = if original.starts_with("#!") {
+                let (shebang, body) = text.split_once('\n').unwrap();
+                let (original_shebang, original_body) = original.split_once('\n').unwrap();
+                assert_eq!(shebang, original_shebang);
+                (body, original_body)
+            } else {
+                (text.as_str(), original)
+            };
+            assert!(body.starts_with(&format!(
+                "{prefix}Nucleon runtime downstream modifications:"
+            )));
+            assert_eq!(
+                text.matches("Nucleon runtime downstream modifications:")
+                    .count(),
+                1
+            );
+            assert!(text.contains("runtime 0.1.0-rc.2."));
+            assert_eq!(body.split_once('\n').unwrap().1, original_body);
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+        }
+        assert!(
+            std::process::Command::new(root.path().join("configure"))
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires local pinned Wine, FEX and shared-data source checkouts via ISOTOPE_TEST_WORK"]
+    fn pinned_sources_prepare_for_release() {
+        let work = PathBuf::from(std::env::var_os("ISOTOPE_TEST_WORK").expect("ISOTOPE_TEST_WORK"));
+        let build = Build::new(&work, 1).unwrap();
+        prepare_sources(&build, "0.1.0-rc.1").unwrap();
+        let wine = crate::common::source_diff(&build.wine).unwrap();
+        let fex = crate::common::source_diff(&build.fex).unwrap();
+        prepare_sources(&build, "0.1.0-rc.1").unwrap();
+        assert_eq!(crate::common::source_diff(&build.wine).unwrap(), wine);
+        assert_eq!(crate::common::source_diff(&build.fex).unwrap(), fex);
+    }
+
     #[test]
     fn versions_notices_and_failed_publication_preserve_contracts() {
         assert_eq!(
