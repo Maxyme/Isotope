@@ -1,8 +1,6 @@
-> This reference contract is implemented by Nucleon. Runtime production commands in older examples moved to `isotope`; use README.md for current build commands. Core releases validate their own fixed package layout independently. Experimental graphics assembly can call `nucleon wine inspect --json` for consumer compatibility.
-
 # Runtime capabilities and launch preparation
 
-Nucleon now resolves a selected Wine into a `ResolvedRuntime`, and prepares a
+Nucleon resolves a selected Wine into a `ResolvedRuntime`, and prepares a
 `LaunchPlan` containing its prefix, graphics components and Steam launch protocol.
 Graphics availability checks, staging and the game environment use this selection.
 Wine version strings do not select the execution mode.
@@ -42,144 +40,36 @@ The descriptor describes a complete runtime directory. It cannot reference
 build-tree siblings using `../`. The Rust developer tools can assemble a complete local developer generation.
 The managed installer imports them outside the build tree; compilation stays a developer action.
 
-`nucleon wine status` reports resolved execution capabilities or the descriptor
-error. Checking status does not initialize a prefix.
+`nucleon wine inspect /path/to/runtime --json` reports resolved execution
+capabilities or a descriptor error. Checking status does not initialize a prefix.
 
-## Experimental Steam option and per-game profiles
+## Build, install and select
 
-Build the normal tools, assemble the existing prototype artifacts, then register
-that complete runtime (none of these commands starts Steam or a game):
-
-```sh
-cargo build -p nucleon-cli -p nucleon-runner
-cargo run --release -p nucleon-devtools -- dx12 prepare-runtime
-./target/debug/nucleon wine fex install /absolute/path/printed/by/prepare-runtime --register
-./target/debug/nucleon wine fex status
-```
-
-Steam lists **Nucleon (ARM64/FEX — Experimental)** after its next restart.
-Choose it explicitly in a game's Compatibility settings. Registration pins the
-canonical runtime root and family/ABI; it does not change global Wine or game
-mappings. Missing/changed identity is an error, with no fallback to another Wine.
-Regular tool refresh preserves this selection. `nucleon wine fex unregister`
-removes only this tool.
-
-Native profiles live in `~/Library/Application Support/nucleon/game_profiles/arm64-fex/<appid>.json`,
-separately from ordinary game profiles. Set options with, for example:
+Isotope builds complete runtime directories and source-inclusive core archives.
+Use the [builder commands](README.md#build) and [packaging workflow](README.md#package-and-install).
+Nucleon imports the output as an immutable generation; installation and selection
+are separate actions:
 
 ```sh
-nucleon wine fex profile 601150 --engine auto --graphics-api auto
-nucleon wine fex profile 690790 --engine dxmt --steam-protocol bridge
-```
-
-The strict JSON schema retains the existing engine, Wine, HUD, overlay, helper
-and graphics-path fields, adding `graphics_api` (`auto`, `dx7`, `dx9`, `dx10`,
-`dx11`, `dx12`, `vulkan`, `opengl`) and `steam_protocol` (`bridge`,
-`valve-redirect`). Partial profiles fill absent fields from the embedded FEX game
-presets; explicit `false` and `auto` remain choices. DMC5 defaults to the redirect
-and Steam helper, with its API read from `[Render] TargetPlatform` in its INI.
-DiRT defaults to DX11, the bridge protocol and helper. Both default overlay off.
-Other games receive no game-specific preset. A profile's Wine selection must
-agree with the dedicated tool's pinned runtime.
-
-A graphics preference routes the selected backend; it does not change the game's
-own setting. An explicit preference conflicting with DMC5's configured API is an
-error. Normal Steam launches never rewrite the game INI. The diagnostic scripts
-use a private profile passed through `NUCLEON_GAME_PROFILE`, bypassing one-shot
-production overrides, and call the same Rust runner.
-
-## Prebuilt publisher releases
-
-The publisher pipeline compiles a separate experimental Wine/FEX core runtime;
-users install its archive through `nucleon wine install` without building Wine
-or FEX. See [README.md](README.md#package-and-install) for release tags, checksums,
-corresponding sources, validation and scope. The core package includes WineD3D;
-it does not include the local experiment's DXMT/Vulkan graphics stack.
-
-## Install once and verify explicitly
-
-`nucleon wine fex install <directory> --register` imports the complete runtime into
-`~/Library/Application Support/nucleon/runtimes/arm64-fex/<generation>/` and points
-only the experimental Steam option to it. Omitting `--register` only installs.
-The runtime contains Wine, FEX, its paired graphics components, Vulkan loader and
-private ICD/driver; normal Steam launches do not use the compiler, source tree,
-download archives or Vulkan SDK. `prepare-runtime` remains a developer assembly
-action; its output under `target/` can be removed after managed installation.
-
-Local `.tar.gz`, `.tar.zst` and `.zip` archives, or HTTPS archive URLs, require a
-checksum supplied by the caller:
-
-```sh
-nucleon wine fex install /path/to/runtime.tar.zst --sha256 <64-hex-digest> --register
+nucleon wine install /path/to/runtime-or-archive
+nucleon wine fex select /path/to/installed/runtime
 nucleon wine fex verify
+nucleon run /path/to/program.exe --emulator fex
+nucleon launch <appid> --emulator fex
 ```
 
-Downloads share the graphics downloader's HTTP timeouts and bounded spool.
-Archives share its bounded extractor (8 GiB extracted limit for native runtimes).
-Installation rejects escaping/absolute symlinks, unsupported filesystem entries,
-incompatible graphics components and unresolved non-system Mach-O dependencies.
-It validates the relocated package before atomic publication, preserving build
-provenance and notices. A per-file manifest records SHA256, permissions and file
-identities. Imports are local installations; no redistribution permission is
-inferred from this manifest. Developer assembly preserves the reference DXMT
-notices, Wine/FEX notices, driver notices and SDK license overview; a published
-redistributable package still needs the Vulkan loader's component notices and a
-complete distribution review.
+The selected directory is printed by installation. A one-launch `--wine <exact-id-or-path>`
+selection leaves the saved default unchanged. Nucleon starts the program directly.
+Steam games use Nucleon's managed game installation and a signed-in native Steam
+client for ownership and Steamworks services.
 
-Unchanged imports reuse their content generation. A damaged generation is kept
-and a separate repair is published, preserving any existing process's paths.
-Old generations are not automatically deleted. The runner holds a shared
-generation lease through prefix cleanup; prefix family/ABI remains the separate
-rule for compatible saved state.
+Nucleon owns game profiles, prefix locking/preparation, bridge staging, shader
+caches, launch logs and process cleanup. See its [setup guide](https://github.com/Maxyme/Nucleon/blob/main/SETUP.md)
+and [architecture](https://github.com/Maxyme/Nucleon/blob/main/ARCHITECTURE.md)
+for those consumer policies. Isotope owns runtime build inputs, package integrity,
+ABI declarations, corresponding sources and its owned runtime probes.
 
-`nucleon wine fex verify [runtime-directory]` hashes every installed file and
-rechecks the native dependency closure without executing Wine, Steam or a game.
-Without a path it verifies the registered tool. Normal launches use install-time
-hashes only while file identities match; changed inputs are rehashed. This static
-check does not validate optional dynamic loads, device behavior or gameplay.
-
-## Prepare only changed components
-
-Graphics preparation calculates the final DLL set first. It restores or replaces
-only files whose selected contents changed, retaining the existing rollback
-transaction. An unchanged repeat stage performs zero DLL writes; a missing or
-modified output is repaired atomically. Backend changes preserve shared identical
-DLLs and update the private Vulkan alias only when needed.
-
-Steam staging likewise compares the final layout, including protocol-specific
-Valve images and symlinks. Bound bridge variants are cached by source bridge,
-selected ntdll contents, native ABI and binding schema. New prefixes reuse those
-variants; unchanged prefixes skip relinking, signing and identical copies.
-Cached signatures are regenerated when their tracked output changes.
-
-Bootstrap and registry receipts include runtime inputs and settings schema.
-Compatible runtime changes invalidate the relevant preparation, while unchanged
-launches skip Wine registry commands. Missing bootstrap directories/registry files
-trigger native prefix repair. Registry receipts track applied settings; they do
-not promise that arbitrary later user edits preserve every registry value.
-Readiness receipts publish only after preparation succeeds; failed preparation
-retries and does not bless partial outputs.
-
-The diagnostic launchers prefer the registered managed runtime and use file
-identity for the game executable. `--debug` additionally records its full hash.
-They retain their explicit `--runtime` developer override and do not extract or
-hash build archives when using an installed runtime.
-
-## Graphics selection
-
-The runner discovers candidate bundles once and canonicalizes their component
-paths. Per-game paths and explicit environment overrides retain their precedence
-over bundled defaults. A launch reuses the resolved runtime rather than selecting
-its architecture again during environment creation.
-
-DXMT's Unix companion must match Wine's native ABI. Native DXMT also requires
-the explicitly paired bundle declared in the runtime descriptor. AMD64 frontend DLLs can run
-through FEX; ordinary ARM64 DLLs and hybrid AMD64/ARM64EC/ARM64X images are not
-silently treated as equivalent AMD64 frontends. Hybrid metadata is recognized,
-and unvalidated native frontend combinations are rejected. ARM64EC graphics
-frontend optimization remains experimental. An explicit Vulkan-only ARM64EC
-contract is available for local integration validation; the default remains the
-existing x86/x64 frontend behavior.
+## Experimental graphics pairing
 
 An experimental descriptor can declare:
 
@@ -224,127 +114,22 @@ companion. The resolved driver directories precede the loader directory to avoid
 loading an SDK's different same-name driver. The legacy MoltenVK alias is private
 to the prefix and points to that same resolved driver.
 
-## Prefix and Steam setup
+## Runtime extensions
 
-Intel continues to use `<compatdata>/pfx`. Native games use
-`<compatdata>/nucleon/arm64-fex/<family>/pfx`, with an adjacent identity record.
-Compatible runtime updates reuse that namespace; incompatible ABI reuse fails
-without modifying its contents. Existing Intel prefixes are preserved. A prefix
-lock spans preparation, game execution and cleanup, preventing simultaneous
-launches from replacing its loaded libraries or sharing an owned wineserver.
-Linked native namespace components are refused. Interrupted preparation can retry
-with the recorded identity; unidentified existing native prefixes require a new
-namespace. No prefix migration is performed.
+The native ntdll exports `isotope_dll_search_prepend_v1` and
+`isotope_guest_supervisor_v1` for consumers to detect optional DLL-search and
+launcher-death supervision support. `WINEDLLPATH_PREPEND` retains Wine's builtin
+DLL rules. `ISOTOPE_SUPERVISOR_PID` identifies the owning launcher; it does not
+identify Steam. These features also serve standalone Windows applications.
+`NUCLEON_EMULATE_KUSD` remains a required runtime correctness setting for builds
+using the downstream shared-data decoder.
 
-Preparation validates the native and guest Steam bridge ABIs, then bootstraps
-through the selected loader (`wine wineboot -i`, `wine regedit`, `wine reg`).
-A separate `bin/wineboot` or `bin/regedit` executable is unnecessary. Setup
-commands run in owned process groups with bounded waits and TERM/KILL cleanup.
-Failures propagate; bootstrap and registry readiness markers follow success.
-An ABI ownership record allows interrupted native bootstrap to retry and rejects
-reuse of a prefix belonging to another execution mode. Existing untagged native
-prefixes require a fresh prefix; automatic migration is not implemented.
+## Validation boundaries
 
-Bridge staging uses atomic replacements and selects the native Unix companion.
-For `valve-redirect`, the genuine `steamclient64.dll.valve` is preserved as the
-client image, separate from the forwarding `lsteamclient.dll`. Before binding,
-Nucleon checks the bridge's imports against the exact selected Wine ntdll.
-ARM64 binding relinks, signs and verifies private prefix copies, with no change
-to the source bridge or runtime. Intel binding retains its existing unsigned,
-in-place load-command editing contract.
-
-When required, the Steam helper receives a Windows executable path and retains
-the game's individual arguments. This supplies a live Windows Steam process
-identity in addition to the native session connection. The prior prototype's
-`SteamAPI_IsSteamRunning`/`SteamAPI_Init` positive and negative controls remain
-in `tools/runtime-probes/steam-route.c`; bridge binding alone does not replace
-those end-to-end checks.
-
-## Launch diagnostics and shader caches
-
-Each launch writes `logs/<AppID-or-manual>/<run-id>/` under Nucleon's Application
-Support directory. It contains `runner.log`, `wine.log`, `receipt.json`, and
-`setup.log` when Wine setup commands run. Concurrent launches have separate files.
-`nucleon logs --runner` reads the latest run; `--follow` switches to new launches.
-Existing shared logs remain available as historical files.
-
-Normal launches keep warnings/errors, engine selection, preparation summaries
-and process outcomes. `NUCLEON_DEBUG=1` enables DLL/exception/process messages,
-Vulkan-loader diagnostics, graphics info logs and native quit-stack tracing.
-Diagnostic DXVK/DXMT files also stay in the run directory. Explicit
-`NUCLEON_WINEDEBUG` channels and `NUCLEON_TRACE_PROCESS_EXIT=0|1` remain available.
-`NUCLEON_WINE_LOG` redirects Wine output; `NUCLEON_RUN_RECEIPT` writes an additional
-receipt for diagnostic wrappers. Both file overrides resolve relative to the
-runner's working directory.
-
-Receipts record the runtime, engine, prefix, staged-file count, effective cache
-paths, outcome and separate preparation/runtime/cleanup durations. Runtime is the
-supervised interval after launcher spawn, not measured gameplay or frame time.
-An exit code or completed timer does not establish gameplay validity. Interrupted
-runs retain their last recorded phase.
-
-Vulkan-backed launches use persistent per-game directories beneath
-`<compatdata>/nucleon/shader-cache/v1/`. Their namespaces include execution mode,
-runtime family/ABI, guest architecture, engine, graphics tuning and translator/
-driver contents. Moving unchanged components to a new Wine generation preserves
-the same cache directory. Changed graphics inputs select a new directory while
-retaining old data. Prefix repair and graphics staging do not delete caches.
-Existing prototype cache locations are left intact; automatic migration is not
-performed.
-
-Explicit `VKD3D_SHADER_CACHE_PATH`, `DXVK_SHADER_CACHE_PATH` and
-`MESA_SHADER_CACHE_DIR` overrides take precedence. Managed Windows translator
-paths use Wine's `Z:` mapping; Mesa receives a native path.
-[VKD3D cache controls](https://github.com/HansKristian-Work/vkd3d-proton/blob/v3.0.1/README.md#shader-cache)
-and [DXVK cache controls](https://github.com/doitsujin/dxvk/blob/v3.1/README.md)
-define the component behavior. DXMT and Metal retain their existing driver/prefix
-cache handling. The pinned KosmicKrisp source does not initialize its Mesa disk
-cache: Nucleon preserves its directory, but persistent Mesa cache writes require
-separate driver work. Cache policy alone makes no performance claim.
-
-The Vulkan backend no longer forces `VKD3D_CONFIG=dxr11,dxr`. Native launches
-ignore inherited raw feature-forcing variables. Deliberate per-game experiments
-can use `NUCLEON_VKD3D_CONFIG`, `NUCLEON_VKD3D_FEATURE_LEVEL`,
-`NUCLEON_VKD3D_SHADER_MODEL`, `NUCLEON_MESA_VK_VERSION_OVERRIDE` or
-`NUCLEON_MVK_CONFIG_ADVERTISE_API_VERSION`. Intel launches retain explicit raw
-overrides; the `NUCLEON_` form takes precedence in both modes. Forced settings
-participate in cache compatibility. Upstream describes `dxr` as forcing support
-even where unsafe; it is not a default capability selection.
-
-## Verification
-
-Core/runner regressions cover descriptors, hybrid PE detection, graphics
-selection/staging, Steam arguments, failed setup/retry, private bridge signing
-and owned process cleanup. An optional integration test checks actual local
-FEX images and the installed ARM64 Steam bridge without executing Wine, Steam
-or a game:
-
-```sh
-NUCLEON_TEST_ARM64_RUNTIME=/path/to/built/runtime \
-NUCLEON_TEST_STEAM_BRIDGE=/path/to/bridge \
-cargo test -p nucleon-core --test native_runtime -- --ignored
-```
-
-These changes do not establish DMC5 gameplay stability or resolve the prototype's
-two sparse-depth driver failures.
-
-## Per-launch runtime selection
-
-`nucleon launch <appid> --wine <exact-id-or-path>` chooses one complete runtime.
-`--emulator rosetta` selects the configured Intel Wine default; `--emulator fex`
-selects the registered native FEX generation (`fex-preview`). Combining the flags
-constrains that Wine's mode. `--engine` remains the graphics choice.
-
-Explicit CLI requests are resolved and pinned into the one-shot launch file,
-so an already-running Steam client receives them. They supersede inherited tool
-defaults for that launch, including a stale FEX tool pin. Mode-specific profiles
-are selected from the effective runtime, not the tool name. Failed preflight
-retains the request; no prefix is created. Incompatible guest ABIs, emulators and
-separate GPTK runner requests fail rather than changing the selected Wine.
-
-`nucleon wine list` includes managed native generations. `wine use <native-id-or-path>`
-and `wine set-path <native-path>` update the FEX registration while preserving the
-Intel default. No per-launch request changes either saved default. Invalid unused
-saved graphics paths no longer block a selected bundled/independent route; explicit
-invalid overrides still report their source. A broken experimental registration
-is reported without aborting refresh of unrelated Steam tools.
+Core releases validate their fixed package layout, relocated execution, native
+closure, fonts, permissions and checksums independently of Nucleon. Experimental
+graphics assembly also checks its descriptor through Nucleon's `wine inspect`.
+Neither static inspection nor a passing owned probe establishes game compatibility.
+Steam ownership, rendering, input and gameplay are separate consumer checks.
+Prefix families and ABI versions describe saved-state compatibility; their names
+must not be changed as a cosmetic cleanup.
