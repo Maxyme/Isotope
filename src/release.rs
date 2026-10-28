@@ -1210,6 +1210,10 @@ mod tests {
         let descriptor: toml::Value = toml::from_str(&core_descriptor()).unwrap();
         assert_eq!(descriptor["guests"].as_array().unwrap().len(), 2);
         assert!(descriptor.get("graphics").is_none());
+        assert_eq!(descriptor["schema"].as_integer(), Some(2));
+        assert_eq!(descriptor["steam_protocols"].as_array().unwrap().len(), 2);
+        assert!(descriptor.get("steam_protocol").is_none());
+        assert!(descriptor.get("steam_helper").is_none());
     }
     #[test]
     #[ignore = "requires a local built core archive, staging directory and compiler workspace on Apple Silicon"]

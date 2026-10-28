@@ -537,8 +537,6 @@ impl Graphics {
         } else {
             vec!["auto", "dxmt"]
         })?;
-        descriptor["steam_protocol"] =
-            toml::Value::String(if vulkan { "valve-redirect" } else { "bridge" }.into());
         let mut paths = BTreeMap::from([("dxmt", "share/nucleon/dxmt")]);
         if let Some(graphics) = graphics {
             let environment = descriptor["environment"]

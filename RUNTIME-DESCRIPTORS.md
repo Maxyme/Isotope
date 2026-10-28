@@ -27,8 +27,11 @@ The descriptor records:
   ICD and Vulkan loader locations. Bundled ICDs use a relative library path to
   an architecture-compatible library inside the runtime. The Vulkan loader
   must export `vkGetInstanceProcAddr`.
-- Steam bridge protocol (`bridge` or `valve-redirect`) and whether to use the
-  Windows Steam helper by default. An explicit per-game helper choice wins.
+- Schema 2 advertises `steam_protocols = ["bridge", "valve-redirect"]` as
+  supported Wine-side protocols. It does not select a game's protocol or helper.
+  Nucleon's game profiles make those choices independently of graphics. Published
+  schema-1 descriptors remain readable; new assembly emits schema 2 without
+  changing the prefix family or ABI.
 - Required native prefix family and ABI (`[prefix] family = "isotope-fex"`,
   `abi = 1`). Families contain lowercase letters, digits, `_` or `-`; the ABI
   is positive and changes when an existing prefix cannot be safely reused.

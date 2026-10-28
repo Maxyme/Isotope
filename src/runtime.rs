@@ -36,6 +36,12 @@ struct Layout {
     windows_dirs: Vec<PathBuf>,
     emulators: Vec<Emulator>,
     #[serde(default)]
+    steam_protocols: Vec<String>,
+    #[serde(default)]
+    steam_protocol: Option<String>,
+    #[serde(default)]
+    steam_helper: Option<bool>,
+    #[serde(default)]
     graphics: Graphics,
 }
 pub struct Runtime {
@@ -105,14 +111,64 @@ fn pe(path: &Path, allowed: &[u16]) -> Result<()> {
     );
     Ok(())
 }
+/// Preserve advertised capabilities when pairing an existing runtime; do not choose game policy.
+pub fn capability_descriptor(d: &mut toml::Value) -> Result<()> {
+    let schema = d
+        .get("schema")
+        .and_then(|v| v.as_integer())
+        .context("Missing runtime schema")?;
+    ensure!(
+        matches!(schema, 1 | 2),
+        "Unsupported runtime descriptor schema"
+    );
+    if schema == 1 {
+        let protocol = d
+            .get("steam_protocol")
+            .and_then(|v| v.as_str())
+            .unwrap_or("bridge");
+        ensure!(
+            matches!(protocol, "bridge" | "valve-redirect"),
+            "Unknown Steam protocol"
+        );
+        d["steam_protocols"] = toml::Value::try_from(if protocol == "valve-redirect" {
+            vec!["bridge", "valve-redirect"]
+        } else {
+            vec!["bridge"]
+        })?;
+    }
+    let table = d
+        .as_table_mut()
+        .context("Runtime descriptor must be a table")?;
+    table.remove("steam_protocol");
+    table.remove("steam_helper");
+    table.insert("schema".into(), 2.into());
+    Ok(())
+}
+
 impl Runtime {
     pub fn inspect(root: &Path) -> Result<Self> {
         let root = root.canonicalize()?;
         let d: Layout = toml::from_str(&fs::read_to_string(root.join("nucleon-runtime.toml"))?)?;
         ensure!(
-            d.schema == 1 && d.mode == "arm64-fex",
+            matches!(d.schema, 1 | 2) && d.mode == "arm64-fex",
             "Unsupported Isotope runtime layout"
         );
+        if d.schema == 2 {
+            ensure!(
+                d.steam_protocol.is_none() && d.steam_helper.is_none(),
+                "Game launch preferences do not belong in schema-2 runtimes"
+            );
+            ensure!(
+                d.steam_protocols.iter().any(|p| p == "bridge")
+                    && d.steam_protocols.iter().enumerate().all(|(i, p)| matches!(
+                        p.as_str(),
+                        "bridge" | "valve-redirect"
+                    ) && !d.steam_protocols
+                        [..i]
+                        .contains(p)),
+                "Invalid Steam protocol capabilities"
+            );
+        }
         ensure!(
             !d.guests.is_empty() && d.guests.iter().all(|g| matches!(g.as_str(), "x64" | "x86")),
             "Unsupported guest ABI"

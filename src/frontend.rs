@@ -104,6 +104,7 @@ pub fn cross_file(compiler: &Path, architecture: &str) -> Result<String> {
 }
 pub fn experimental_descriptor(original: &str) -> Result<String> {
     let mut d: toml::Value = toml::from_str(original)?;
+    crate::runtime::capability_descriptor(&mut d)?;
     ensure!(
         d["mode"].as_str() == Some("arm64-fex")
             && d.get("graphics")

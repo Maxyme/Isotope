@@ -52,7 +52,9 @@ The three recipes describe separate build layers, not three competing Wine bases
 | [arm64-fex-dx12.toml](assets/wine/recipes/arm64-fex-dx12.toml) | Mesa, its build dependencies, Vulkan-enabled Wine and reference DXVK/VKD3D archives | `dx12` |
 | [arm64ec-graphics.toml](assets/wine/recipes/arm64ec-graphics.toml) | Source-built graphics frontends, MinGW and the paired Darwin TEB/CRT settings | `frontend` |
 
-All three are used. Core release builds require only the first recipe. The
+New runtime descriptors advertise supported Steam protocols as capabilities;
+Nucleon chooses game launch policy. Adding Vulkan does not select a Steam protocol
+or enable a Windows Steam helper. Core release builds require only the first recipe. The
 `dx12` name also covers Vulkan/DX11 support; `frontend` builds the separately
 paired graphics DLLs. These workflows retain distinct build and provenance
 records because their Wine configuration, sources and ABI requirements differ.
