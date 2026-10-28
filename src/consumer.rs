@@ -21,15 +21,9 @@ pub struct Runtime {
     pub windows_dirs: Vec<PathBuf>,
     pub graphics: Graphics,
 }
-fn executable() -> PathBuf {
-    crate::NUCLEON
-        .get()
-        .cloned()
-        .unwrap_or_else(|| "nucleon".into())
-}
 impl Runtime {
-    pub fn inspect(root: &Path) -> Result<Self> {
-        let value = output(executable(), &["wine".into(),"inspect".into(),p(root),"--json".into()], Some(&clean_environment()), None)
+    fn inspect(root: &Path, executable: &Path) -> Result<Self> {
+        let value = output(executable, &["wine".into(),"inspect".into(),p(root),"--json".into()], Some(&clean_environment()), None)
             .context("Consumer validation requires Nucleon with 'wine inspect --json'; pass --nucleon /path/to/nucleon")?;
         let runtime = parse_inspection(&value)?;
         ensure!(
@@ -39,6 +33,33 @@ impl Runtime {
         Ok(runtime)
     }
 }
+/// Explicit post-assembly consumer validation; ordinary assembly never calls Nucleon.
+pub fn check(root: &Path, executable: &Path, report: &Path) -> Result<()> {
+    ensure!(
+        !report.exists(),
+        "Consumer validation report already exists"
+    );
+    let local = crate::runtime::Runtime::inspect(root)?;
+    let consumer = Runtime::inspect(&local.root, executable)?;
+    ensure!(
+        consumer.loader == local.loader
+            && consumer.server == local.server
+            && consumer.unix_dir == local.unix_dir
+            && consumer.windows_dirs == local.windows_dirs,
+        "Consumer resolved a different runtime layout"
+    );
+    // Keep the consumer result separate from immutable runtime contents.
+    crate::common::write_json(
+        report,
+        &serde_json::json!({
+            "schema":1,"status":"PASSED","runtime":consumer.root,"consumer":executable,
+            "graphics":{"dxmt":consumer.graphics.dxmt,"dxvk":consumer.graphics.dxvk,"vkd3d":consumer.graphics.vkd3d,
+              "vulkan_icd":consumer.graphics.vulkan_icd,"vulkan_loader":consumer.graphics.vulkan_loader},
+            "execution_validation":"NOT_RUN","steam_validation":"NOT_RUN","gameplay_validation":"NOT_RUN"
+        }),
+    )
+}
+
 fn parse_inspection(value: &str) -> Result<Runtime> {
     // The producer is independently versioned: accept additional response fields.
     #[derive(Deserialize)]

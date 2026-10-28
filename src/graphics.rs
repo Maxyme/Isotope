@@ -475,7 +475,7 @@ impl Graphics {
         );
         let vulkan = source.join("lib/wine/aarch64-unix/winevulkan.so").is_file();
         let graphics = if vulkan { Some(self.graphics()?) } else { None };
-        let mut inputs = json!({"schema":2,"wine":receipt,"dxmt":hash_files(&dxmt,&dxmt_files.iter().map(p).collect::<Vec<_>>())?,"recipe_sha256":sha(&repo().join(RECIPE))?,"unixlib":json(&unix.join("build.json"))?,"vulkan":vulkan,"reference_sha256":self.base.recipe.reference.sha256});
+        let mut inputs = json!({"schema":2,"consumer_validation":"NOT_RUN","wine":receipt,"dxmt":hash_files(&dxmt,&dxmt_files.iter().map(p).collect::<Vec<_>>())?,"recipe_sha256":sha(&repo().join(RECIPE))?,"unixlib":json(&unix.join("build.json"))?,"vulkan":vulkan,"reference_sha256":self.base.recipe.reference.sha256});
         let mut emulators = BTreeMap::new();
         for (dir, name) in [
             ("arm64ec", "libarm64ecfex.dll"),
@@ -503,7 +503,7 @@ impl Graphics {
         fs::create_dir_all(&parent)?;
         let target = parent.join(format!("rust-{}", &key(&inputs)?[..20]));
         if target.exists() {
-            crate::consumer::Runtime::inspect(&target)?;
+            crate::runtime::Runtime::inspect(&target)?;
             ensure!(
                 json(&target.join("share/nucleon/integration-inputs.json"))? == inputs,
                 "Existing runtime generation changed"
@@ -604,7 +604,7 @@ impl Graphics {
             stage.join("nucleon-runtime.toml"),
             toml::to_string(&descriptor)?,
         )?;
-        crate::consumer::Runtime::inspect(&stage)?;
+        crate::runtime::Runtime::inspect(&stage)?;
         crate::artifacts::publish_new(&stage, &target)?;
         Ok(target)
     }

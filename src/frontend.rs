@@ -531,7 +531,7 @@ impl Frontend {
         let original = fs::read_to_string(baseline.join("nucleon-runtime.toml"))?;
         let descriptor = experimental_descriptor(&original)?;
         let d: toml::Value = toml::from_str(&descriptor)?;
-        let base = crate::consumer::Runtime::inspect(&baseline)?;
+        let base = crate::runtime::Runtime::inspect(&baseline)?;
         let mut copies: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
         let mut builds = BTreeMap::new();
         for (component, names) in [
@@ -630,12 +630,12 @@ impl Frontend {
             .map(|(relative, source)| Ok((p(relative), sha(source)?)))
             .collect::<Result<_>>()?;
         let contract = json!({"schema":1,"frontend_abi":"arm64ec","builds":builds,"files":hashes});
-        let inputs = json!({"schema":2,"baseline":baseline,"descriptor":descriptor,"pairing":contract,"validation":"NOT_EXECUTION_VALIDATED","steam_validation":"NOT_RUN","gameplay_validation":"NOT_RUN"});
+        let inputs = json!({"schema":2,"baseline":baseline,"descriptor":descriptor,"pairing":contract,"validation":"NOT_EXECUTION_VALIDATED","consumer_validation":"NOT_RUN","steam_validation":"NOT_RUN","gameplay_validation":"NOT_RUN"});
         let parent = self.work.parent().unwrap().join("arm64ec-integrated");
         fs::create_dir_all(&parent)?;
         let target = parent.join(format!("rust-{}", &key(&inputs)?[..20]));
         if target.exists() {
-            crate::consumer::Runtime::inspect(&target)?;
+            crate::runtime::Runtime::inspect(&target)?;
             ensure!(
                 json(&target.join(SHARED).join("frontend.json"))? == contract,
                 "Existing ARM64EC generation changed"
@@ -669,8 +669,8 @@ impl Frontend {
         write_json(&stage.join(SHARED).join("frontend.json"), &contract)?;
         write_json(&stage.join(SHARED).join("assembly.json"), &inputs)?;
         fs::write(stage.join("nucleon-runtime.toml"), toml::to_string(&d)?)?;
-        // Reuse the production contract validator instead of duplicating provenance/ABI checks.
-        crate::consumer::Runtime::inspect(&stage)?;
+        // Validate the producer layout before publication; consumer validation is explicit.
+        crate::runtime::Runtime::inspect(&stage)?;
         crate::artifacts::publish_new(&stage, &target)?;
         Ok(target)
     }

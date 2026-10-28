@@ -117,8 +117,18 @@ native-DLL rejection case.
 Core releases validate the relocated archive independently: file hashes,
 permissions, symlinks, native dependencies, CPU execution, fonts and cleanup.
 Nucleon managed import is recorded as `NOT_RUN` and checked separately after
-publication. Experimental graphics assembly still accepts `--nucleon` or
-`ISOTOPE_NUCLEON` for optional consumer inspection.
+publication. Graphics assembly validates its local paths, ABI images and pairing hashes without
+requiring a Nucleon executable. Its provenance records consumer validation as
+`NOT_RUN`. Check compatibility explicitly after assembly, keeping the report
+outside the immutable runtime:
+
+```sh
+isotope check-consumer --runtime /path/to/assembled/runtime \
+  --nucleon /path/to/nucleon --output /new/path/consumer-validation.json
+```
+
+The report records the consumer, resolved runtime and inspection result. Static
+consumer inspection does not execute Wine, Steam or a game.
 
 ```sh
 target/release/isotope release build \

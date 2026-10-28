@@ -13,9 +13,9 @@ mod package_validation;
 mod process;
 mod receipts;
 mod release;
+mod runtime;
 mod runtime_tools;
 static REQUIRE_X86: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static NUCLEON: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -29,12 +29,18 @@ use std::{num::NonZeroUsize, path::PathBuf, sync::atomic::Ordering};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    /// Optional consumer executable for experimental graphics assembly
-    #[arg(long, global = true)]
-    nucleon: Option<PathBuf>,
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Explicitly validate an assembled runtime against a Nucleon consumer
+    CheckConsumer {
+        #[arg(long)]
+        runtime: PathBuf,
+        #[arg(long, default_value = "nucleon")]
+        nucleon: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Build or probe the pinned native Wine/FEX runtime
     Fex(FexArgs),
     /// Build/package the core runtime; x86 failures are temporarily optional
@@ -177,14 +183,13 @@ fn graphics_context(
 fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
-    let _ = NUCLEON.set(
-        cli.nucleon
-            .or_else(|| std::env::var_os("ISOTOPE_NUCLEON").map(PathBuf::from))
-            .or_else(|| std::env::var_os("WINE_FEX_NUCLEON").map(PathBuf::from))
-            .unwrap_or_else(|| "nucleon".into()),
-    );
     ctrlc::set_handler(|| common::CANCELLED.store(true, Ordering::SeqCst))?;
     match cli.command {
+        Commands::CheckConsumer {
+            runtime,
+            nucleon,
+            output,
+        } => consumer::check(&runtime, &nucleon, &output),
         Commands::Fex(args) => {
             let build = build::Build::new(&args.workspace.work, args.workspace.jobs.get())?;
             let _lease =

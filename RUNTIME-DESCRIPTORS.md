@@ -128,7 +128,10 @@ using the downstream shared-data decoder.
 
 Core releases validate their fixed package layout, relocated execution, native
 closure, fonts, permissions and checksums independently of Nucleon. Experimental
-graphics assembly also checks its descriptor through Nucleon's `wine inspect`.
+graphics assembly validates local paths, native/guest images and pairing hashes.
+`isotope check-consumer --runtime <path> --nucleon <executable> --output <report>`
+checks Nucleon's descriptor interpretation explicitly after assembly; ordinary
+assembly records this separate check as `NOT_RUN`.
 Neither static inspection nor a passing owned probe establishes game compatibility.
 Steam ownership, rendering, input and gameplay are separate consumer checks.
 Prefix families and ABI versions describe saved-state compatibility; their names
