@@ -73,6 +73,8 @@ enum FexAction {
     ProbeSupervision,
     /// Verify builtin backend search precedence and rejection of native DLLs
     ProbeDllSearch,
+    /// Verify cold security-library loading and RPC output unmarshalling
+    ProbeSecurity,
     /// Compare x86/x64 Vulkan swapchain, readback and presentation
     ProbeVulkan,
 }
@@ -230,6 +232,10 @@ fn main() -> Result<()> {
                 FexAction::ProbeDllSearch => {
                     common::require_native()?;
                     runtime_tools::dll_search(&build, args.runtime.as_deref())
+                }
+                FexAction::ProbeSecurity => {
+                    common::require_native()?;
+                    runtime_tools::security(&build, args.runtime.as_deref())
                 }
                 FexAction::ProbeSupervision => {
                     common::require_native()?;

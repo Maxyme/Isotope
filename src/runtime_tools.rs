@@ -91,6 +91,53 @@ fn compile(
     )
 }
 
+/// A cold secur32 load reaches delayed variadic ARM64EC RPC calls. Older LLVM
+/// exit thunks corrupt their stack arguments during the x64 resolver round trip.
+pub fn security(build: &Build, explicit: Option<&Path>) -> Result<()> {
+    let runtime = runtime(build, explicit)?;
+    let output = build.work.join("security-regression");
+    fs::create_dir_all(&output)?;
+    // Every invocation must exercise initial DLL/service startup, not warmed imports.
+    let prefix = tempfile::Builder::new()
+        .prefix("prefix-")
+        .tempdir_in(&output)?;
+    let env = environment(build, &runtime, prefix.path());
+    let exe = output.join("security-x64.exe");
+    compile(build, "x64", "security-rpc.c", &exe, &["-ladvapi32"])?;
+    let result = marker_run(
+        &runtime.join("bin/wine"),
+        &[p(&exe)],
+        &env,
+        Some(&output),
+        &output.join("security-x64.log"),
+        60,
+        0,
+        "ISOTOPE_SECURITY_RPC_OK",
+    );
+    let cleanup = crate::common::cleanup_server(
+        &runtime.join("bin/wineserver"),
+        &env,
+        &output.join("cleanup.log"),
+    );
+    let retained_prefix = if result.is_err() || cleanup.is_err() {
+        Some(prefix.keep())
+    } else {
+        None
+    };
+    write_json(
+        &output.join("result.json"),
+        &json!({
+            "schema": 1, "runtime": runtime, "probe_sha256": sha(&exe)?,
+            "retained_prefix": retained_prefix,
+            "status": if result.is_ok() && cleanup.is_ok() { "PASSED" } else { "FAILED" },
+            "error": result.as_ref().err().map(|e| format!("{e:#}")),
+            "cleanup_error": cleanup.as_ref().err().map(|e| format!("{e:#}")),
+            "games_tested": false,
+        }),
+    )?;
+    result.and(cleanup)
+}
+
 pub fn graphics(build: &Build, explicit: Option<&Path>) -> Result<()> {
     let runtime = runtime(build, explicit)?;
     let output = build.work.join("graphics-regression");

@@ -7,11 +7,12 @@ schema = 1
 url = "https://github.com/t0b1kent/macrunner-wine.git"
 revision = "ce9f9ed6177d57a43f6fd1e9c8d9be87224eb08a"
 
+# LLVM 23 fixes ARM64EC variadic exit thunks used by delayed RPC imports.
 [toolchain]
-url = "https://github.com/mstorsjo/llvm-mingw/releases/download/20260505/llvm-mingw-20260505-ucrt-macos-universal.tar.xz"
-archive = "llvm-mingw-20260505-ucrt-macos-universal.tar.xz"
-directory = "llvm-mingw-20260505-ucrt-macos-universal"
-sha256 = "050379de888f0c843787819dadf183df3693330a5724643919e9121f16355295"
+url = "https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/llvm-mingw-20261020-ucrt-macos-universal.tar.xz"
+archive = "llvm-mingw-20261020-ucrt-macos-universal.tar.xz"
+directory = "llvm-mingw-20261020-ucrt-macos-universal"
+sha256 = "e9c13e4ede38e715003ffc674d4d00a1088df8235439d1f0c16188ff0704c17e"
 
 [reference]
 url = "https://github.com/t0b1kent/macrunner-app/releases/download/v1.0.9/MacRunner-1.0.9-arm64.zip"

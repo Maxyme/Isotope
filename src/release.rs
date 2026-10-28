@@ -558,6 +558,17 @@ fn validate_archive(
             120,
             0,
         )?;
+        // Keep delayed variadic RPC calls in the mandatory x64 release checks.
+        validation.guest_smoke.insert(
+            "x64-security-rpc".into(),
+            GuestOutcome::new(ValidationStatus::Testing),
+        );
+        write_json(&logs.join("validation.json"), &validation)?;
+        crate::runtime_tools::security(build, Some(&runtime))?;
+        validation.guest_smoke.insert(
+            "x64-security-rpc".into(),
+            GuestOutcome::new(ValidationStatus::Passed),
+        );
         for (guest, triple, bits) in [("x64", "x86_64", 64), ("x86", "i686", 32)] {
             validation
                 .guest_smoke

@@ -80,8 +80,13 @@ games. Each command keeps separate logs and a `result.json` in its workspace:
 isotope fex probe-graphics --work target/arm64-fex
 isotope fex probe-supervision --work target/arm64-fex
 isotope fex probe-dll-search --work target/arm64-fex
+isotope fex probe-security --work target/arm64-fex
 isotope fex probe-vulkan --work target/probes --runtime /path/to/graphics-runtime
 ```
+
+`probe-security` checks cold security-library loading and RPC output handling.
+Release validation also requires this x64 check; it catches older compilers that
+miscompile ARM64EC variadic calls through delayed imports.
 
 `--runtime` tests an existing installation instead of the workspace's built core.
 Vulkan additionally needs a descriptor naming its driver and loader, and accepts
