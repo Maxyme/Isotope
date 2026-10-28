@@ -762,7 +762,7 @@ pub fn package(build: &Build, version: &str, target: &Path) -> Result<()> {
         fs::write(
             assets.join("RELEASE-NOTES.md"),
             format!(
-                "# Isotope {version}: experimental ARM64 Wine/FEX core\n\nCore package validated independently of Nucleon after archive relocation. Nucleon managed installation and Steam/game integration are separate consumer checks. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {} --register\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/isotope/README.md.\n",
+                "# Isotope {version}: experimental ARM64 Wine/FEX core\n\nCore package validated independently of Nucleon after archive relocation. Nucleon managed installation and Steam/game integration are separate consumer checks. The 32-bit test always runs but is temporarily non-blocking; inspect runtime-release.json and validation logs for its result. No DXMT, DXVK/VKD3D, Vulkan, Steam bridge or game compatibility certification.\n\n```sh\nnucleon wine install ./{binary} --sha256 {}\nnucleon wine fex select /path/to/installed/runtime\nnucleon wine fex verify\n```\n\nCorresponding sources and rebuild instructions: {source}; sources/isotope/README.md.\n",
                 sha(&assets.join(&binary))?
             ),
         )?;

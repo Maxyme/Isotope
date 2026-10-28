@@ -139,13 +139,18 @@ a binary archive, corresponding patched sources and build scripts,
 `runtime-release.json`, `SHA256SUMS.txt` and validation logs.
 
 ```sh
-nucleon wine install isotope --version 0.1.0-rc.1 --register
-nucleon wine install ./isotope-0.1.0-rc.1-macos-arm64.tar.gz --register
+nucleon wine install isotope --version 0.1.0-rc.1
+# Alternatively: nucleon wine install ./isotope-0.1.0-rc.1-macos-arm64.tar.gz
+nucleon wine fex select /path/to/installed/runtime
+nucleon wine fex verify
 ```
 
 Nucleon also accepts a runtime directory or archive URL. The named source resolves
 the exact `v<version>` release in `Maxyme/isotope` and verifies its checksum.
-Registration selects the experimental FEX runtime without changing Intel Wine.
+Installation prints the installed directory and leaves runtime selection unchanged.
+`wine fex select` saves that directory as the FEX default without changing Intel
+Wine. Launch through `nucleon run <exe> --emulator fex` or
+`nucleon launch <appid> --emulator fex`.
 
 The [release workflow](.github/workflows/release.yml) builds and validates Isotope
 without a Nucleon checkout or executable. Portable Rust checks and release
