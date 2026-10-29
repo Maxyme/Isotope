@@ -58,9 +58,11 @@ completes Epic login with `EOS_Success`. The previous SDK loading error and null
 interface crash do not recur. Optional Epic friends/presence requests report
 insufficient access scopes, while login and achievement queries succeed.
 
-The game window is unavailable through the app-inspection tool. Visual rendering
-and interactive gameplay remain unverified; reaching the menu in logs is startup
-evidence, not a gameplay certification. The test uses a four-minute time limit
+The game window is unavailable through the app-inspection tool. The first short
+test ended before the subsequent visual-feedback check; a report of no window
+after that test does not establish a fullscreen failure. A later windowed test
+was confirmed visible by the user, as described below. Interactive gameplay beyond
+the menu remains unverified. The test uses a four-minute time limit
 and disposable prefixes. It ends with the expected `bounded` receipt, and its
 Wine server exits cleanly. Original recorded game-file hashes remain unchanged.
 
@@ -69,3 +71,31 @@ strict Clippy plus formatting checks pass. `probe-security` fails on the previou
 runtime and passes on the rebuild. Investigation logs and receipts are retained
 under `/private/tmp/talos-isotope-20261020`; logs that can contain game credentials
 remain inside its private `game-test` subdirectory.
+
+
+## Visible-window confirmation
+
+A follow-up launch uses `-dx12 -windowed -ResX=1280 -ResY=720 -WinX=100 -WinY=100`
+with HUD disabled. Wine traces show the Talos window created at an on-screen
+position, shown, and receiving client-surface presentation calls. The user confirms
+that this game window is visible. Its receipt records a normal exit with code 0;
+the game log reports `Closing by request`, followed by orderly engine shutdown.
+There is no reproduced startup crash in this test.
+
+Nucleon's launcher does not request a hidden window or change GUI sessions. An
+owned native-window diagnostic also reports a visible, ordered, non-minimized
+window on the active desktop. No Wine window-system patch was added. The working
+windowed configuration is preserved in the isolated `talos2-isotope-windowed`
+application profile, without an automatic test timeout. Original Talos/GPTK/FSR
+settings, game files and saves remain unchanged. Fullscreen behavior has not been
+independently verified.
+
+For this local investigation, the preserved profile can be launched with:
+
+```sh
+NUCLEON_SUPPORT_DIR=/private/tmp/talos-isotope-20261020/game-test/support \
+  nucleon app run talos2-isotope-windowed
+```
+
+This uses the disposable game clone and the rebuilt runtime in Isotope's `target/`
+folder. It does not select or modify the original saved Talos profile.
